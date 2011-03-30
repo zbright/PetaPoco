@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using NUnit.Framework;
+using NUnit.Framework.SyntaxHelpers;
 using PetaPoco;
 
 namespace PetaPoco.Tests
 {
-	[TestFixture("sqlserver")]
-	[TestFixture("mysql")]
+	//[TestFixture("sqlserver")]
+	//[TestFixture("mysql")]
+    [TestFixture]
 	public class Tests : AssertionHelper
 	{
 		public Tests(string connectionStringName)

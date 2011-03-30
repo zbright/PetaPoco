@@ -96,13 +96,26 @@ namespace PetaPoco
 			// Store factory and connection string
 			_factory = DbProviderFactories.GetFactory(_providerName);
 			_connectionString = ConfigurationManager.ConnectionStrings[connectionStringName].ConnectionString;
-			_transactionDepth = 0;
+            SetInitialValues();
+        }
 
-			if (_connectionString.IndexOf("Allow User Variables=true") >= 0 && IsMySql())
-			{
-				_paramPrefix = "?";
-			}
-		}
+        public Database(string connectionString, string providerName)
+        {
+            _providerName = providerName;
+            _factory = DbProviderFactories.GetFactory(providerName);
+            _connectionString = connectionString;
+            SetInitialValues();
+        }
+
+        private void SetInitialValues()
+        {
+            _transactionDepth = 0;
+
+            if (_connectionString.IndexOf("Allow User Variables=true") >= 0 && IsMySql())
+            {
+                _paramPrefix = "?";
+            }
+        }
 
 		// Who are we talking too?
 		bool IsMySql() { return string.Compare(_providerName, "MySql.Data.MySqlClient", true) == 0; }
@@ -284,6 +297,15 @@ namespace PetaPoco
 			return src;
 		}
 
+        public virtual PocoColumn GetPropertyName(PocoData pd, string columnName)
+        {
+            PocoColumn pc;
+            if (!pd.Columns.TryGetValue(columnName, out pc))
+                pc = null;
+
+            return pc;
+        }
+
 		// Create a poco object for the current record in a data reader
 		T CreatePoco<T>(IDataReader r, PocoData pd, ref PocoColumn[] ColumnMap) where T : new()
 		{
@@ -296,11 +318,8 @@ namespace PetaPoco
 				for (var i = 0; i < r.FieldCount; i++)
 				{
 					var name = r.GetName(i);
-					PocoColumn pc;
-					if (!pd.Columns.TryGetValue(name, out pc))
-						pc = null;
+				    var pc = GetPropertyName(pd, name);
 					map.Add(pc);
-
 				}
 				ColumnMap = map.ToArray();
 			}
@@ -893,13 +912,14 @@ namespace PetaPoco
 		}
 
 
-		internal class PocoColumn
+	    public class PocoColumn
 		{
 			public string ColumnName;
 			public PropertyInfo PropertyInfo;
 			public bool ResultColumn;
 		}
-		internal class PocoData
+
+	    public class PocoData
 		{
 			static Dictionary<Type, PocoData> m_PocoData = new Dictionary<Type, PocoData>();
 			public static PocoData ForType(Type t)
