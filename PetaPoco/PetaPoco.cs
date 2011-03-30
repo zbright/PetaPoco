@@ -508,12 +508,12 @@ namespace PetaPoco
 				// Ugh really?
 				sqlSelectRemoved = rxOrderBy.Replace(sqlSelectRemoved, "");
 				sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) AS __rn, {1}) as __paged WHERE __rn>{2} AND __rn<={3}",
-										sqlOrderBy, sqlSelectRemoved, page * itemsPerPage, (page + 1) * itemsPerPage);
+										sqlOrderBy, sqlSelectRemoved, (page-1) * itemsPerPage, (page) * itemsPerPage);
 			}
 			else
 			{
 				// Nice
-				sqlPage = string.Format("{0}\nLIMIT {1} OFFSET {2}", sql, itemsPerPage, page * itemsPerPage);
+				sqlPage = string.Format("{0}\nLIMIT {1} OFFSET {2}", sql, itemsPerPage, (page-1) * itemsPerPage);
 			}
 
 			// Get the records

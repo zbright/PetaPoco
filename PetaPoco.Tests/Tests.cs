@@ -256,7 +256,7 @@ namespace PetaPoco.Tests
 			int i = 0;
 			foreach (var p in r.Items)
 			{
-				Expect(p.id, Is.EqualTo(id + i + 5));
+				Expect(p.id, Is.EqualTo(id + i));
 				i++;
 			}
 
