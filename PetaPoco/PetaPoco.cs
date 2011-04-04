@@ -80,31 +80,38 @@ namespace PetaPoco
     public class OraclePocoFactory : PocoFactory
     {
         private readonly string _assemblyName;
-        private readonly string _connectionType;
-        private readonly string _commandType;
+        private readonly string _connectionTypeName;
+        private readonly string _commandTypeName;
 
-        public OraclePocoFactory(string assemblyName, string connectionType, string commandType)
+        private Type _connectionType;
+        private Type _commandType;
+
+        public OraclePocoFactory(string assemblyName, string connectionTypeName, string commandTypeName)
         {
             _assemblyName = assemblyName;
-            _connectionType = connectionType;
-            _commandType = commandType;
+            _connectionTypeName = connectionTypeName;
+            _commandTypeName = commandTypeName;
         }
 
         public override IDbConnection CreateConnection()
         {
-            var connectionType = ReflectHelper.TypeFromAssembly(_connectionType, _assemblyName);
-            if (connectionType == null)
-                throw new InvalidOperationException("Can't find Connection type: " + _connectionType);
+            if (_connectionType == null)
+                _connectionType = ReflectHelper.TypeFromAssembly(_connectionTypeName, _assemblyName);
 
-            return (IDbConnection)Activator.CreateInstance(connectionType);
+            if (_connectionType == null)
+                throw new InvalidOperationException("Can't find Connection type: " + _connectionTypeName);
+
+            return (IDbConnection)Activator.CreateInstance(_connectionType);
         }
 
         public override IDbCommand CreateCommand()
         {
-            var oracleCommandType = ReflectHelper.TypeFromAssembly(_commandType, _assemblyName);
-            var command = (IDbCommand)Activator.CreateInstance(oracleCommandType);
+            if (_commandType == null)
+                _commandType = ReflectHelper.TypeFromAssembly(_commandTypeName, _assemblyName);
 
-            var oracleCommandBindByName = oracleCommandType.GetProperty("BindByName");
+            var command = (IDbCommand)Activator.CreateInstance(_commandType);
+
+            var oracleCommandBindByName = _commandType.GetProperty("BindByName");
             oracleCommandBindByName.SetValue(command, true, null);
 
             return command;
