@@ -71,6 +71,66 @@ namespace PetaPoco
 		public List<T> Items { get; set; }
 	}
 
+    public abstract class PocoFactory
+    {
+        public abstract IDbConnection CreateConnection();
+        public abstract IDbCommand CreateCommand();
+    }
+
+    public class OraclePocoFactory : PocoFactory
+    {
+        private readonly string _assemblyName;
+        private readonly string _connectionType;
+        private readonly string _commandType;
+
+        public OraclePocoFactory(string assemblyName, string connectionType, string commandType)
+        {
+            _assemblyName = assemblyName;
+            _connectionType = connectionType;
+            _commandType = commandType;
+        }
+
+        public override IDbConnection CreateConnection()
+        {
+            var connectionType = ReflectHelper.TypeFromAssembly(_connectionType, _assemblyName);
+            if (connectionType == null)
+                throw new InvalidOperationException("Can't find Connection type: " + _connectionType);
+
+            return (IDbConnection)Activator.CreateInstance(connectionType);
+        }
+
+        public override IDbCommand CreateCommand()
+        {
+            var oracleCommandType = ReflectHelper.TypeFromAssembly(_commandType, _assemblyName);
+            var command = (IDbCommand)Activator.CreateInstance(oracleCommandType);
+
+            var oracleCommandBindByName = oracleCommandType.GetProperty("BindByName");
+            oracleCommandBindByName.SetValue(command, true, null);
+
+            return command;
+        }
+    }
+
+    public class DefaultPofoFactory : PocoFactory
+    {
+        private readonly DbProviderFactory _factory;
+
+        public DefaultPofoFactory(DbProviderFactory factory)
+        {
+            _factory = factory;
+        }
+
+        public override IDbConnection CreateConnection()
+        {
+            return _factory.CreateConnection();
+        }
+
+        public override IDbCommand CreateCommand()
+        {
+            return _factory.CreateCommand();
+        }
+    }
+
 	// Database class ... this is where most of the action happens
 	public class Database
 	{
@@ -110,16 +170,20 @@ namespace PetaPoco
 			// Store settings
 			_connectionString = connectionString;
 			_providerName = providerName;
-			_factory = DbProviderFactories.GetFactory(_providerName);
+		    SetPocoFactory(providerName);
             SetInitialValues();
         }
 
-        public Database(string connectionString, string providerName)
+        private void SetPocoFactory(string providerName)
         {
-            _providerName = providerName;
-            _factory = DbProviderFactories.GetFactory(providerName);
-            _connectionString = connectionString;
-            SetInitialValues();
+            if (!IsOracle())
+            {
+                _factory = new DefaultPofoFactory(DbProviderFactories.GetFactory(providerName));
+            }
+            else
+            {
+                _factory = new OraclePocoFactory("Oracle.DataAccess", "Oracle.DataAccess.Client.OracleConnection", "Oracle.DataAccess.Client.OracleCommand");
+            }
         }
 
         private void SetInitialValues()
@@ -131,14 +195,20 @@ namespace PetaPoco
             {
                 _paramPrefix = "?";
             }
+
+            if (IsOracle())
+            {
+                _paramPrefix = ":";
+            }
         }
 
-		// Who are we talking too?
-		bool IsMySql() { return string.Compare(_providerName, "MySql.Data.MySqlClient", true) == 0; }
-		bool IsSqlServer() { return string.Compare(_providerName, "System.Data.SqlClient", true) == 0; }
+        // Who are we talking too?
+        public bool IsMySql() { return string.Compare(_providerName, "MySql.Data.MySqlClient", true) == 0; }
+        public bool IsSqlServer() { return string.Compare(_providerName, "System.Data.SqlClient", true) == 0; }
+        public bool IsOracle() { return string.Compare(_providerName, "Oracle.DataAccess.Client", true) == 0; }
 
 		// Get the connection for this database
-		public DbConnection OpenConnection()
+		public IDbConnection OpenConnection()
 		{
 			var c = _factory.CreateConnection();
 			c.ConnectionString = _connectionString;
@@ -228,7 +298,7 @@ namespace PetaPoco
 		}
 
 		// Add a parameter to a DB command
-		static void AddParam(DbCommand cmd, object item, string ParameterPrefix)
+		static void AddParam(IDbCommand cmd, object item, string ParameterPrefix)
 		{
 			var p = cmd.CreateParameter();
 			p.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
@@ -261,9 +331,15 @@ namespace PetaPoco
 
 
 		// Create a command
-		public DbCommand CreateCommand(DbConnection connection, string sql, params object[] args)
+		public IDbCommand CreateCommand(IDbConnection connection, Sql sqlStatement)
 		{
-			// If we're in MySQL "Allow User Variables", we need to fix up parameter prefixes
+            // Set parameter prefix on Sql object
+            sqlStatement.ParameterPrefix = _paramPrefix;
+
+            var sql = sqlStatement.SQL;
+            var args = sqlStatement.Arguments;
+
+            // If we're in MySQL "Allow User Variables", we need to fix up parameter prefixes
 			if (_paramPrefix == "?")
 			{
 				// Convert "@parameter" -> "?parameter"
@@ -278,10 +354,10 @@ namespace PetaPoco
 			_lastSql = sql;
 			_lastArgs = args;
 
-			DbCommand result = null;
+			IDbCommand result = null;
 			result = _factory.CreateCommand();
 			result.Connection = connection;
-			result.CommandText = sql;
+            result.CommandText = ModifySql(sql);
 			result.Transaction = _transaction;
 			if (args.Length > 0)
 			{
@@ -293,11 +369,23 @@ namespace PetaPoco
 			return result;
 		}
 
+        public virtual string ModifySql(string sql)
+        {
+            return sql;
+        }
+
 		// Create a command
-		DbCommand CreateCommand(ShareableConnection connection, string sql, params object[] args)
+        IDbCommand CreateCommand(ShareableConnection connection, Sql sqlStatement)
 		{
-			return CreateCommand(connection.Connection, sql, args);
+			return CreateCommand(connection.Connection, sqlStatement);
 		}
+
+        // Create a command
+        IDbCommand CreateCommand(ShareableConnection connection, string sql, params object[] args)
+        {
+            var sqlStatement = new Sql(sql, args);
+            return CreateCommand(connection.Connection, sqlStatement);
+        }
 
 		public virtual object ConvertValue(PropertyInfo dest, object src)
 		{
@@ -371,54 +459,54 @@ namespace PetaPoco
 		// Execute a non-query command
 		public int Execute(string sql, params object[] args)
 		{
-			try
-			{
-				using (var conn = OpenSharedConnection())
-				{
-					using (var cmd = CreateCommand(conn, sql, args))
-					{
-						return cmd.ExecuteNonQuery();
-					}
-				}
-			}
-			catch (Exception x)
-			{
-				OnException(x);
-				throw;
-			}
+            return Execute(new Sql(sql, args));
 		}
 
 		string _paramPrefix = "@";
 
 		public int Execute(Sql sql)
 		{
-			return Execute(sql.SQL, sql.Arguments);
+            try
+            {
+                using (var conn = OpenSharedConnection())
+                {
+                    using (var cmd = CreateCommand(conn, sql))
+                    {
+                        return cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception x)
+            {
+                OnException(x);
+                throw;
+            }
 		}
 
 		// Execute and cast a scalar property
 		public T ExecuteScalar<T>(string sql, params object[] args)
 		{
-			try
-			{
-				using (var conn = OpenSharedConnection())
-				{
-					using (var cmd = CreateCommand(conn, sql, args))
-					{
-						object val = cmd.ExecuteScalar();
-						return (T)Convert.ChangeType(val, typeof(T));
-					}
-				}
-			}
-			catch (Exception x)
-			{
-				OnException(x);
-				throw;
-			}
+            return ExecuteScalar<T>(new Sql(sql, args));
 		}
 
 		public T ExecuteScalar<T>(Sql sql)
 		{
-			return ExecuteScalar<T>(sql.SQL, sql.Arguments);
+            try
+            {
+                using (var conn = OpenSharedConnection())
+                {
+                    using (var cmd = CreateCommand(conn, sql))
+                    {
+                        object val = cmd.ExecuteScalar();
+                        return (T)Convert.ChangeType(val, typeof(T));
+                    }
+                }
+            }
+            catch (Exception x)
+            {
+                OnException(x);
+                throw;
+            }
 		}
 
 		string AddSelectClause<T>(string sql)
@@ -519,11 +607,11 @@ namespace PetaPoco
 
 			// Build the SQL for the actual final result
 			string sqlPage;
-			if (IsSqlServer())
+			if (IsSqlServer() || IsOracle())
 			{
 				// Ugh really?
 				sqlSelectRemoved = rxOrderBy.Replace(sqlSelectRemoved, "");
-				sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) AS __rn, {1}) as __paged WHERE __rn>{2} AND __rn<={3}",
+				sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) rn, {1}) paged WHERE rn>{2} AND rn<={3}",
 										sqlOrderBy, sqlSelectRemoved, (page-1) * itemsPerPage, page * itemsPerPage);
 			}
 			else
@@ -603,18 +691,14 @@ namespace PetaPoco
 		{
 			return Query<T>(sql, args).FirstOrDefault();
 		}
-
-
 		public List<T> Fetch<T>(Sql sql) where T : new()
 		{
-			return Fetch<T>(sql.SQL, sql.Arguments);
+			return Fetch<T>(sql);
 		}
-
 		public IEnumerable<T> Query<T>(Sql sql) where T : new()
 		{
-			return Query<T>(sql.SQL, sql.Arguments);
+			return Query<T>(sql);
 		}
-
 		public T Single<T>(Sql sql) where T : new()
 		{
 			return Query<T>(sql).Single();
@@ -1012,13 +1096,13 @@ namespace PetaPoco
 		// Non-shared connections are disposed 
 		class ShareableConnection : IDisposable
 		{
-			public ShareableConnection(DbConnection connection, bool shared)
+			public ShareableConnection(IDbConnection connection, bool shared)
 			{
 				_connection = connection;
 				_shared = shared;
 			}
 
-			public DbConnection Connection
+			public IDbConnection Connection
 			{
 				get
 				{
@@ -1026,7 +1110,7 @@ namespace PetaPoco
 				}
 			}
 
-			DbConnection _connection;
+			IDbConnection _connection;
 			bool _shared;
 
 			public void Dispose()
@@ -1042,9 +1126,9 @@ namespace PetaPoco
 		// Member variables
 		string _connectionString;
 		string _providerName;
-		DbProviderFactory _factory;
-		DbConnection _sharedConnection;
-		DbTransaction _transaction;
+		PocoFactory _factory;
+		IDbConnection _sharedConnection;
+		IDbTransaction _transaction;
 		int _transactionDepth;
 		string _lastSql;
 		object[] _lastArgs;
@@ -1112,6 +1196,9 @@ namespace PetaPoco
 			_sqlFinal = sb.ToString();
 			_argsFinal = args.ToArray();
 		}
+
+        private string _paramterPrefix = "@";
+        public string ParameterPrefix { get { return _paramterPrefix; } set { _paramterPrefix = value; } }
 
 		public string SQL
 		{
@@ -1214,7 +1301,7 @@ namespace PetaPoco
 							throw new ArgumentException(string.Format("Parameter '@{0}' specified but none of the passed arguments have a property with this name (in '{1}')", param, _sql));
 						}
 					}
-					return "@" + (args.Count - 1).ToString();
+                    return _paramterPrefix + (args.Count - 1).ToString();
 				}
 				);
 
@@ -1226,4 +1313,49 @@ namespace PetaPoco
 				_rhs.Build(sb, args);
 		}
 	}
+
+    public class ReflectHelper
+    {
+        public static Type TypeFromAssembly(string typeName, string assemblyName)
+        {
+            try
+            {
+                // Try to get the type from an already loaded assembly
+                Type type = Type.GetType(typeName);
+
+                if (type != null)
+                {
+                    return type;
+                }
+
+                if (assemblyName == null)
+                {
+                    // No assembly was specified for the type, so just fail
+                    string message = "Could not load type " + typeName + ". Possible cause: no assembly name specified.";
+                    throw new TypeLoadException(message);
+                }
+
+                Assembly assembly = Assembly.Load(assemblyName);
+
+                if (assembly == null)
+                {
+                    throw new InvalidOperationException("Can't find assembly: " + assemblyName);
+                }
+
+                type = assembly.GetType(typeName);
+
+                if (type == null)
+                {
+                    return null;
+                }
+
+                return type;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+    }
 }
