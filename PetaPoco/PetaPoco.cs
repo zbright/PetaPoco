@@ -323,7 +323,8 @@ namespace PetaPoco
 				}
 				else if (item.GetType() == typeof(string))
 				{
-					p.Size = (item as string).Length + 1;
+				    var itemLength = (item as string).Length + 1;
+					p.Size = itemLength > 4000 ? itemLength : 4000;
 					p.Value = item;
 				}
 				else
@@ -334,8 +335,6 @@ namespace PetaPoco
 
 			cmd.Parameters.Add(p);
 		}
-
-
 
 		// Create a command
 		public IDbCommand CreateCommand(IDbConnection connection, Sql sqlStatement)
