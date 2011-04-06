@@ -455,6 +455,31 @@ namespace PetaPoco.Tests
 		}
 
 		[Test]
+		public void Transaction_nested_yny()
+		{
+			using (var scope1 = db.Transaction)
+			{
+				InsertRecords(10);
+
+				using (var scope2 = db.Transaction)
+				{
+					InsertRecords(10);
+					//scope2.Complete();
+				}
+
+				using (var scope3 = db.Transaction)
+				{
+					InsertRecords(10);
+					scope3.Complete();
+				}
+
+				scope1.Complete();
+			}
+
+			Expect(GetRecordCount(), Is.EqualTo(0));
+		}
+
+		[Test]
 		public void DateTimesAreUtc()
 		{
 			var id = InsertRecords(1);
@@ -498,6 +523,21 @@ namespace PetaPoco.Tests
 			var d = db.SingleOrDefault<deco>("WHERE id=@0", a.id);
 			Expect(d.id, Is.EqualTo(a.id));
 			Expect(d.date_edited.HasValue, Is.EqualTo(false));
+		}
+
+		[Test]
+		public void NamedArgs()
+		{
+			long first=InsertRecords(10);
+
+			var items=db.Fetch<deco>("WHERE id >= @min_id AND id <= @max_id", 
+						new 
+						{ 
+							min_id = first + 3, 
+							max_id = first + 6 
+						}
+					);
+			Expect(items.Count, Is.EqualTo(4));
 		}
 	}
 
