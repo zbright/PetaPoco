@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -320,7 +321,7 @@ namespace PetaPoco
 		// Helper to handle named parameters from object properties
 		static Regex rxParams = new Regex(@"(?<!@)@\w+", RegexOptions.Compiled);
 		public static string ProcessParams(string _sql, object[] args_src, List<object> args_dest, string prefix)
-			{
+	    {
 			return rxParams.Replace(_sql, m =>
 			{
 				string param = m.Value.Substring(1);
@@ -358,10 +359,10 @@ namespace PetaPoco
 		}
 
 		// Add a parameter to a DB command
-		static void AddParam(IDbCommand cmd, object item, string ParameterPrefix)
+		static void AddParam(IDbCommand cmd, object item, string parameterName)
 		{
 			var p = cmd.CreateParameter();
-			p.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
+		    p.ParameterName = parameterName;
 			if (item == null)
 			{
 				p.Value = DBNull.Value;
@@ -398,11 +399,6 @@ namespace PetaPoco
             var sql = sqlStatement.SQL;
             var args = sqlStatement.Arguments;
 
-			// Perform named argument replacements
-			var new_args = new List<object>();
-			sql = ProcessParams(sql, args, new_args, _paramPrefix);
-			args = new_args.ToArray();
-
             // If we're in MySQL "Allow User Variables", we need to fix up parameter prefixes
 			if (_paramPrefix == "?")
 			{
@@ -423,11 +419,30 @@ namespace PetaPoco
 			result.Connection = connection;
             result.CommandText = ModifySql(sql);
 			result.Transaction = _transaction;
+
+		    var count = 0;
 			if (args.Length > 0)
 			{
 				foreach (var item in args)
 				{
-					AddParam(result, item, _paramPrefix);
+                    if ((item as IEnumerable<string>) != null || (item as IEnumerable<int>) != null)
+                    {
+                        var origCount = count;
+                        var newCount = 0;
+                        foreach (var parm in (IEnumerable)item)
+                        {
+                            AddParam(result, parm, _paramPrefix + "i" + origCount + "p" + newCount);
+                            newCount++;
+                        }
+
+                        var newParams = Enumerable.Range(0, newCount).Select(i => _paramPrefix + "i" + origCount + "p" + i).ToArray();
+                        result.CommandText = result.CommandText.Replace(_paramPrefix + origCount, "(" + string.Join(",", newParams) + ")");
+                    }
+                    else
+                    {
+                        AddParam(result, item, _paramPrefix + count);
+                    }
+                    count++;
 				}
 			}
 			return result;
@@ -738,7 +753,7 @@ namespace PetaPoco
 
 							names.Add(i.Key);
 							values.Add(string.Format("{0}{1}", _paramPrefix, index++));
-							AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix);
+                            AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix + (index - 1));
 						}
 
 						cmd.CommandText = string.Format("INSERT INTO {0} ({1}) VALUES ({2}); SELECT @@IDENTITY AS NewID;",
@@ -813,7 +828,7 @@ namespace PetaPoco
 							sb.AppendFormat("{0} = {1}{2}", i.Key, _paramPrefix, index++);
 
 							// Store the parameter in the command
-							AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix);
+                            AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix + (index - 1));
 						}
 
 						cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2} = {3}{4}",
@@ -823,7 +838,7 @@ namespace PetaPoco
 								_paramPrefix,
 								index++
 								);
-						AddParam(cmd, primaryKeyValue, _paramPrefix);
+						AddParam(cmd, primaryKeyValue, _paramPrefix + (index-1));
 
 						_lastSql = cmd.CommandText;
 						_lastArgs = new object[] { primaryKeyValue };
