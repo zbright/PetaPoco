@@ -96,16 +96,16 @@ namespace PetaPoco
 
     public class DefaultMapper : IMapper
     {
-        public void GetTableInfo(Type t, ref string tableName, ref string primaryKey, ref string sequenceName) { }
-        public bool MapPropertyToColumn(PropertyInfo pi, ref string columnName, ref bool resultColumn)
+        public virtual void GetTableInfo(Type t, ref string tableName, ref string primaryKey, ref string sequenceName) { }
+        public virtual bool MapPropertyToColumn(PropertyInfo pi, ref string columnName, ref bool resultColumn)
         {
             return true;
         }
-        public Func<object, object> GetValueConverter(PropertyInfo pi, Type SourceType)
+        public virtual Func<object, object> GetValueConverter(PropertyInfo pi, Type SourceType)
         {
             return null;
         }
-        public Func<object, object> GetDbConverter(Type SourceType)
+        public virtual Func<object, object> GetDbConverter(Type SourceType)
         {
             return x => x;
         }
