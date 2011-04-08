@@ -256,7 +256,7 @@ namespace PetaPoco
 
 		// Helper to handle named parameters from object properties
 		static Regex rxParams = new Regex(@"(?<!@)@\w+", RegexOptions.Compiled);
-		public static string ProcessParams(string _sql, object[] args_src, List<object> args_dest, string prefix)
+		public static string ProcessParams(string _sql, object[] args_src, List<object> args_dest)
 	    {
 			return rxParams.Replace(_sql, m =>
 			{
@@ -1339,9 +1339,6 @@ namespace PetaPoco
 			_argsFinal = args.ToArray();
 		}
 
-        private string _paramterPrefix = "@";
-        public string ParameterPrefix { get { return _paramterPrefix; } set { _paramterPrefix = value; } }
-
 		public string SQL
 		{
 			get
@@ -1410,7 +1407,7 @@ namespace PetaPoco
 					sb.Append("\n");
 				}
 
-				var sql = Database.ProcessParams(_sql, _args, args, _paramterPrefix);
+				var sql = Database.ProcessParams(_sql, _args, args);
 
 				if (Is(lhs, "WHERE ") && Is(this, "WHERE "))
 					sql = "AND " + sql.Substring(6);
