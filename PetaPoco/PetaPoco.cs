@@ -81,100 +81,6 @@ namespace PetaPoco
 		Func<object, object> GetValueConverter(PropertyInfo pi, Type SourceType);
 	}
 
-    public abstract class PocoFactory
-    {
-        public abstract IDbConnection CreateConnection();
-        public abstract IDbCommand CreateCommand();
-    }
-
-    public class OraclePocoFactory : PocoFactory
-    {
-        private readonly IDbConnection _connection;
-        private readonly string _assemblyName;
-        private readonly string _connectionTypeName;
-        private readonly string _commandTypeName;
-
-        private Type _connectionType;
-        private Type _commandType;
-
-        public OraclePocoFactory(string assemblyName, string connectionTypeName, string commandTypeName)
-        {
-            _assemblyName = assemblyName;
-            _connectionTypeName = connectionTypeName;
-            _commandTypeName = commandTypeName;
-        }
-
-        public OraclePocoFactory(IDbConnection connection)
-        {
-            _connection = connection;
-        }
-
-        public override IDbConnection CreateConnection()
-        {
-            if (_connection != null)
-                return _connection;
-
-            if (_connectionType == null)
-                _connectionType = ReflectHelper.TypeFromAssembly(_connectionTypeName, _assemblyName);
-
-            if (_connectionType == null)
-                throw new InvalidOperationException("Can't find Connection type: " + _connectionTypeName);
-
-            return (IDbConnection)Activator.CreateInstance(_connectionType);
-        }
-
-        public override IDbCommand CreateCommand()
-        {
-            IDbCommand command;
-            if (_connection != null)
-                command = _connection.CreateCommand();
-            else
-            {
-                if (_commandType == null)
-                    _commandType = ReflectHelper.TypeFromAssembly(_commandTypeName, _assemblyName);
-
-                command = (IDbCommand) Activator.CreateInstance(_commandType);
-            }
-
-            var oracleCommandBindByName = _commandType.GetProperty("BindByName");
-            oracleCommandBindByName.SetValue(command, true, null);
-
-            return command;
-        }
-    }
-
-    public class DefaultPofoFactory : PocoFactory
-    {
-        private readonly IDbConnection _connection;
-        private readonly DbProviderFactory _factory;
-
-        public DefaultPofoFactory(DbProviderFactory factory)
-        {
-            _factory = factory;
-        }
-
-        public DefaultPofoFactory(IDbConnection connection)
-        {
-            _connection = connection;
-        }
-
-        public override IDbConnection CreateConnection()
-        {
-            if (_connection != null)
-                return _connection;
-
-            return _factory.CreateConnection();
-        }
-
-        public override IDbCommand CreateCommand()
-        {
-            if (_connection != null)
-                return _connection.CreateCommand();
-
-            return _factory.CreateCommand();
-        }
-    }
-
 	// Database class ... this is where most of the action happens
 	public class Database : IDisposable
 	{
@@ -190,6 +96,13 @@ namespace PetaPoco
 		{
 			_connectionString = connectionString;
 			_providerName = providerName;
+			CommonConstruct();
+		}
+
+		public Database(string connectionString, DbProviderFactory provider)
+		{
+			_connectionString = connectionString;
+			_factory = provider;
 			CommonConstruct();
 		}
 
@@ -222,7 +135,8 @@ namespace PetaPoco
 			SqlServer,
 			SqlServerCE,
 			MySql,
-            Oracle
+			PostgreSQL,
+			Oracle,
 		}
 		DBType _dbType = DBType.SqlServer;
 
@@ -231,44 +145,21 @@ namespace PetaPoco
 		{
             _transactionDepth = 0;
             ForceDateTimesToUtc = true;
+            EnableAutoSelect = true;
 
-			// Store settings
-		    _factory = SetPocoFactory(_providerName);
+			if (_providerName != null)
+				_factory = DbProviderFactories.GetFactory(_providerName);
 
-		    var connectionName = (_sharedConnection ?? _factory.CreateConnection()).GetType().Name;
-            if (connectionName == "MySqlConnection")
-                _dbType = DBType.MySql;
-            else if (connectionName == "SqlCeConnection")
-                _dbType = DBType.SqlServerCE;
-            else if (connectionName == "OracleConnection")
-                _dbType = DBType.Oracle;
+			string dbtype = (_factory==null ? _sharedConnection.GetType() : _factory.GetType()).Name;
+			if (dbtype.StartsWith("MySql"))			_dbType = DBType.MySql;
+			else if (dbtype.StartsWith("SqlCe"))	_dbType = DBType.SqlServerCE;
+			else if (dbtype.StartsWith("Npgsql"))	_dbType = DBType.PostgreSQL;
+			else if (dbtype.StartsWith("Oracle"))	_dbType = DBType.Oracle;
 
-			if (_connectionString != null && _connectionString.IndexOf("Allow User Variables=true") >= 0 && _dbType==DBType.MySql)
-                _paramPrefix = "?";
-
-            if (_dbType == DBType.Oracle)
-                _paramPrefix = ":";
-        }
-
-        private PocoFactory SetPocoFactory(string providerName)
-        {
-            PocoFactory pocoFactory;
-
-            if (_sharedConnection != null)
-            {
-                if (_sharedConnection.GetType().Name == "OracleConnection")
-                    pocoFactory = new OraclePocoFactory(_sharedConnection);
-                else
-                    pocoFactory = new DefaultPofoFactory(_sharedConnection);
-            }
-            else
-            {
-                if (providerName == "Oracle.DataAccess.Client")
-                    pocoFactory = new OraclePocoFactory("Oracle.DataAccess","Oracle.DataAccess.Client.OracleConnection","Oracle.DataAccess.Client.OracleCommand");
-                else
-                    pocoFactory = new DefaultPofoFactory(DbProviderFactories.GetFactory(_providerName));
-            }
-            return pocoFactory;
+			if (_dbType == DBType.MySql && _connectionString != null && _connectionString.IndexOf("Allow User Variables=true") >= 0)
+				_paramPrefix = "?";
+			if (_dbType == DBType.Oracle)
+				_paramPrefix = ":";
         }
 
 	    // Automatically close one open shared connection
@@ -284,7 +175,7 @@ namespace PetaPoco
 		{
 			if (_sharedConnectionDepth == 0)
 			{
-				_sharedConnection = _factory.CreateConnection();
+				_sharedConnection = _factory as IOracleProvider != null ? ((IOracleProvider)_factory).CreateConnectionOracle() : _factory.CreateConnection();
 				_sharedConnection.ConnectionString = _connectionString;
 				_sharedConnection.Open();
 		    }
@@ -422,8 +313,9 @@ namespace PetaPoco
 				}
 				else if (item.GetType() == typeof(string))
 				{
-                    var itemLength = (item as string).Length + 1;
-                    p.Size = itemLength > 4000 ? -1 : 4000;
+					p.Size = (item as string).Length + 1;
+					if (p.Size < 4000)
+						p.Size = 4000;		// Help query plan caching by using common size
                     p.Value = item;
 				}
 				else
@@ -447,52 +339,57 @@ namespace PetaPoco
             // If we're in MySQL "Allow User Variables", we need to fix up parameter prefixes
 			if (_paramPrefix == "?")
 			{
-				// Convert "@parameter" -> "?parameter"
+				// Convert "@parameter" -> "?parameter", @@uservar -> @uservar and @@@systemvar -> @@systemvar
 				Regex paramReg = new Regex(@"(?<!@)@\w+");
 				sql = paramReg.Replace(sql, m => "?" + m.Value.Substring(1));
-
-				// Convert @@uservar -> @uservar and @@@systemvar -> @@systemvar
 				sql = sql.Replace("@@", "@");
 			}
 
-			// Save the last sql and args
+			// Create the command and add parameters
 			_lastSql = sql;
 			_lastArgs = args;
 
-			IDbCommand result = _factory.CreateCommand();
-			result.Connection = connection;
-            result.CommandText = ModifySql(sql);
-			result.Transaction = _transaction;
+            IDbCommand cmd = _factory as IOracleProvider != null ? ((IOracleProvider)_factory).CreateCommandOracle() : _factory.CreateCommand(); //Hack for ODP.NET 10.2 rel 1
+			cmd.Connection = connection;
+            cmd.CommandText = ModifySql(sql);
+			cmd.Transaction = _transaction;
 
-		    var count = 0;
-			if (args.Length > 0)
-			{
-				foreach (var item in args)
-				{
-                    if ((item as IEnumerable<string>) != null || (item as IEnumerable<int>) != null)
-                    {
-                        var origCount = count;
-                        var newCount = 0;
-                        foreach (var parm in (IEnumerable)item)
-                        {
-                            AddParam(result, parm, _paramPrefix + "i" + origCount + "p" + newCount);
-                            newCount++;
-                        }
+		    AddParameters(cmd, args);
 
-                        var newParams = Enumerable.Range(0, newCount).Select(i => _paramPrefix + "i" + origCount + "p" + i).ToArray();
-                        result.CommandText = result.CommandText.Replace(_paramPrefix + origCount, "(" + string.Join(",", newParams) + ")");
-                    }
-                    else
-                    {
-                        AddParam(result, item, _paramPrefix + count);
-                    }
-                    count++;
-				}
-			}
-			return result;
+		    return cmd;
 		}
 
-        public virtual string ModifySql(string sql)
+        // add the paramters to the command processing 'in' clauses
+	    private void AddParameters(IDbCommand cmd, object[] args) 
+        {
+	        var count = 0;
+	        if (args.Length > 0)
+	        {
+	            foreach (var item in args)
+	            {
+	                if ((item as IEnumerable<string>) != null || (item as IEnumerable<int>) != null)
+	                {
+	                    var origCount = count;
+	                    var newCount = 0;
+	                    foreach (var parm in (IEnumerable)item)
+	                    {
+	                        AddParam(cmd, parm, _paramPrefix + "i" + origCount + "p" + newCount);
+	                        newCount++;
+	                    }
+
+	                    var newParams = Enumerable.Range(0, newCount).Select(i => _paramPrefix + "i" + origCount + "p" + i).ToArray();
+	                    cmd.CommandText = cmd.CommandText.Replace(_paramPrefix + origCount, "(" + string.Join(",", newParams) + ")");
+	                }
+	                else
+	                {
+	                    AddParam(cmd, item, _paramPrefix + count);
+	                }
+	                count++;
+	            }
+	        }
+	    }
+
+	    public virtual string ModifySql(string sql)
         {
             return sql;
         }
@@ -572,28 +469,37 @@ namespace PetaPoco
             }
 		}
 
-		string AddSelectClause<T>(string sql)
-		{
-			// Already present?
-			if (sql.Trim().StartsWith("SELECT", StringComparison.InvariantCultureIgnoreCase))
-				return sql;
-
-			// Get the poco data for this type
-			var pd = PocoData.ForType(typeof(T));
-			return string.Format("SELECT {0} FROM {1} {2}", pd.QueryColumns, pd.TableName, sql);
-		}
+        Regex rxSelect = new Regex(@"^\s*SELECT\s", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.Multiline);
+        string AddSelectClause<T>(string sql)
+        {
+            if (!rxSelect.IsMatch(sql))
+            {
+                var pd = PocoData.ForType(typeof(T));
+                sql = string.Format("SELECT {0} FROM {1} {2}", pd.QueryColumns, pd.TableName, sql);
+            }
+            return sql;
+        }
 
         public bool ForceDateTimesToUtc { get; set; }
+        public bool EnableAutoSelect { get; set; }
 
 		// Return a typed list of pocos
 		public List<T> Fetch<T>(string sql, params object[] args) where T : new()
 		{
-			try
-			{
-				OpenSharedConnection();
+            if (EnableAutoSelect)
+                sql = AddSelectClause<T>(sql);
+
+		    return Fetch<T>(new Sql(sql, args));
+		}
+            
+		public List<T> Fetch<T>(Sql sql) where T : new()
+		{
+            try
+            {
+                OpenSharedConnection();
                 try
                 {
-                    using (var cmd = CreateCommand(_sharedConnection, AddSelectClause<T>(sql), args))
+                    using (var cmd = CreateCommand(_sharedConnection, sql))
                     {
                         using (var r = cmd.ExecuteReader())
                         {
@@ -612,20 +518,16 @@ namespace PetaPoco
                 {
                     CloseSharedConnection();
                 }
-			}
-			catch (Exception x)
-			{
-				OnException(x);
-				throw;
-			}
-            
+            }
+            catch (Exception x)
+            {
+                OnException(x);
+                throw;
+            } 
 		}
 
-		// Warning: scary regex follows
-		static Regex rxColumns = new Regex(@"^\s*SELECT\s+((?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|.)*?)(?<!,\s+)\bFROM\b",
-							RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
-		static Regex rxOrderBy = new Regex(@"\bORDER\s+BY\s+(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?(?:\s*,\s*(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?)*",
-							RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
+		static Regex rxColumns = new Regex(@"^\s*SELECT\s+((?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|.)*?)(?<!,\s+)\bFROM\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
+		static Regex rxOrderBy = new Regex(@"\bORDER\s+BY\s+(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?(?:\s*,\s*(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?)*", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
 		public static bool SplitSqlForPaging(string sql, out string sqlCount, out string sqlSelectRemoved, out string sqlOrderBy)
 		{
 			sqlSelectRemoved = null;
@@ -654,29 +556,17 @@ namespace PetaPoco
 			return true;
 		}
 
-		// Fetch a page	
-		public Page<T> Page<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new()
+		public void BuildPageQueries<T>(long page, long itemsPerPage, string sql, ref object[] args, out string sqlCount, out string sqlPage) where T : new()
 		{
 			// Add auto select clause
 			sql=AddSelectClause<T>(sql);
 
 			// Split the SQL into the bits we need
-			string sqlCount, sqlSelectRemoved, sqlOrderBy;
+			string sqlSelectRemoved, sqlOrderBy;
 			if (!SplitSqlForPaging(sql, out sqlCount, out sqlSelectRemoved, out sqlOrderBy))
 				throw new Exception("Unable to parse SQL statement for paged query");
 
-			// Setup the paged result
-			var result = new Page<T>();
-			result.CurrentPage = page;
-			result.ItemsPerPage = itemsPerPage;
-			result.TotalItems = ExecuteScalar<long>(sqlCount, args);
-			result.TotalPages = result.TotalItems / itemsPerPage;
-			if ((result.TotalItems % itemsPerPage)!=0)
-				result.TotalPages++;
-
-
 			// Build the SQL for the actual final result
-			string sqlPage;
 			if (_dbType==DBType.SqlServer || _dbType==DBType.Oracle)
 			{
 				sqlSelectRemoved = rxOrderBy.Replace(sqlSelectRemoved, "");
@@ -695,6 +585,23 @@ namespace PetaPoco
 				args = args.Concat(new object[] { itemsPerPage, (page - 1) * itemsPerPage}).ToArray();
 			}
 
+		}
+
+		// Fetch a page	
+		public Page<T> Page<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new()
+		{
+			string sqlCount, sqlPage;
+			BuildPageQueries<T>(page, itemsPerPage, sql, ref args, out sqlCount, out sqlPage);
+
+			// Setup the paged result
+			var result = new Page<T>();
+			result.CurrentPage = page;
+			result.ItemsPerPage = itemsPerPage;
+			result.TotalItems = ExecuteScalar<long>(sqlCount, args);
+			result.TotalPages = result.TotalItems / itemsPerPage;
+			if ((result.TotalItems % itemsPerPage) != 0)
+				result.TotalPages++;
+
 			// Get the records
 			result.Items = Fetch<T>(sqlPage, args);
 
@@ -707,48 +614,69 @@ namespace PetaPoco
 			return Page<T>(page, itemsPerPage, sql.SQL, sql.Arguments);
 		}
 
+
+		public List<T> Fetch<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new()
+		{
+			string sqlCount, sqlPage;
+			BuildPageQueries<T>(page, itemsPerPage, sql, ref args, out sqlCount, out sqlPage);
+			return Fetch<T>(sqlPage, args);
+		}
+
+		public List<T> Fetch<T>(long page, long itemsPerPage, Sql sql) where T : new()
+		{
+			return Fetch<T>(page, itemsPerPage, sql.SQL, sql.Arguments);
+		}
+
 		// Return an enumerable collection of pocos
 		public IEnumerable<T> Query<T>(string sql, params object[] args) where T : new()
 		{
-			OpenSharedConnection();
+            if (EnableAutoSelect)
+		        sql = AddSelectClause<T>(sql);
+
+		    return Query<T>(new Sql(sql, args));
+		}
+
+		public IEnumerable<T> Query<T>(Sql sql) where T : new()
+		{
+            OpenSharedConnection();
             try
             {
-				using (var cmd = CreateCommand(_sharedConnection, AddSelectClause<T>(sql), args))
-				{
-					IDataReader r;
-					var pd = PocoData.ForType(typeof(T));
-					try
-					{
-						r = cmd.ExecuteReader();
-					}
-					catch (Exception x)
-					{
-						OnException(x);
-						throw;
-					}
+                using (var cmd = CreateCommand(_sharedConnection, sql))
+                {
+                    IDataReader r;
+                    var pd = PocoData.ForType(typeof(T));
+                    try
+                    {
+                        r = cmd.ExecuteReader();
+                    }
+                    catch (Exception x)
+                    {
+                        OnException(x);
+                        throw;
+                    }
                     var factory = pd.GetFactory<T>(sql + "-" + _sharedConnection.ConnectionString + ForceDateTimesToUtc.ToString(), ForceDateTimesToUtc, r);
-					using (r)
-					{
-						while (true)
-						{
-							T poco;
-							try
-							{
-								if (!r.Read())
-									yield break;
-								poco = factory(r);
-							}
-							catch (Exception x)
-							{
-								OnException(x);
-								throw;
-							}
+                    using (r)
+                    {
+                        while (true)
+                        {
+                            T poco;
+                            try
+                            {
+                                if (!r.Read())
+                                    yield break;
+                                poco = factory(r);
+                            }
+                            catch (Exception x)
+                            {
+                                OnException(x);
+                                throw;
+                            }
 
-							yield return poco;
-						}
-					}
-				}
-			}
+                            yield return poco;
+                        }
+                    }
+                }
+            }
             finally
             {
                 CloseSharedConnection();
@@ -757,7 +685,7 @@ namespace PetaPoco
 
 		public T Single<T>(string sql, params object[] args) where T : new()
 		{
-			return Query<T>(sql, args).Single();
+			return Fetch<T>(sql, args).Single();
 		}
 		public T SingleOrDefault<T>(string sql, params object[] args) where T : new()
 		{
@@ -765,35 +693,27 @@ namespace PetaPoco
 		}
 		public T First<T>(string sql, params object[] args) where T : new()
 		{
-			return Query<T>(sql, args).First();
+			return Fetch<T>(sql, args).First();
 		}
 		public T FirstOrDefault<T>(string sql, params object[] args) where T : new()
 		{
-			return Query<T>(sql, args).FirstOrDefault();
-		}
-		public List<T> Fetch<T>(Sql sql) where T : new()
-		{
-			return Fetch<T>(sql);
-		}
-		public IEnumerable<T> Query<T>(Sql sql) where T : new()
-		{
-			return Query<T>(sql);
+			return Fetch<T>(sql, args).FirstOrDefault();
 		}
 		public T Single<T>(Sql sql) where T : new()
 		{
-			return Query<T>(sql).Single();
+            return Fetch<T>(sql).Single();
 		}
 		public T SingleOrDefault<T>(Sql sql) where T : new()
 		{
-			return Query<T>(sql).SingleOrDefault();
+			return Fetch<T>(sql).SingleOrDefault();
 		}
 		public T First<T>(Sql sql) where T : new()
 		{
-			return Query<T>(sql).First();
+			return Fetch<T>(sql).FirstOrDefault();
 		}
 		public T FirstOrDefault<T>(Sql sql) where T : new()
 		{
-			return Query<T>(sql).FirstOrDefault();
+			return Fetch<T>(sql).FirstOrDefault();
 		}
 
 		// Insert a poco into a table.  If the poco has a property with the same name 
@@ -833,15 +753,29 @@ namespace PetaPoco
 						_lastArgs = values.ToArray();
 
 						object id;
-						if (_dbType!=DBType.SqlServerCE)
+						switch (_dbType)
 						{
-							cmd.CommandText += string.Format(";\nSELECT {0} AS NewID;", (_dbType == DBType.SqlServer ? "SCOPE_IDENTITY()" : "@@IDENTITY"));
-							id = cmd.ExecuteScalar();
-						}
-						else
-						{
-							cmd.ExecuteNonQuery();
-							id = ExecuteScalar<object>("SELECT @@IDENTITY AS NewID;");
+							case DBType.SqlServerCE:
+							    cmd.ExecuteNonQuery();
+							    id = ExecuteScalar<object>("SELECT @@IDENTITY AS NewID;");
+								break;
+							case DBType.SqlServer:
+								cmd.CommandText += ";\nSELECT SCOPE_IDENTITY() AS NewID;";
+								id = cmd.ExecuteScalar();
+								break;
+							case DBType.PostgreSQL:
+								cmd.CommandText += string.Format("returning {0} as NewID", primaryKeyName);
+								id = cmd.ExecuteScalar();
+								break;
+                            case DBType.Oracle:
+                                // Support sequences here later
+                                cmd.ExecuteNonQuery();
+						        id = -1;
+						        break;
+							default:
+								cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
+								id = cmd.ExecuteScalar();
+								break;
 						}
 
 						// Assign the ID back to the primary key property
@@ -913,12 +847,7 @@ namespace PetaPoco
 						}
 
 						cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2} = {3}{4}",
-								tableName,
-								sb.ToString(),
-								primaryKeyName,
-								_paramPrefix,
-								index++
-								);
+											tableName, sb.ToString(), primaryKeyName, _paramPrefix,	index++);
 						AddParam(cmd, primaryKeyValue, _paramPrefix + (index-1));
 
 						_lastSql = cmd.CommandText;
@@ -1340,7 +1269,7 @@ namespace PetaPoco
 		// Member variables
 		string _connectionString;
 		string _providerName;
-		PocoFactory _factory;
+        DbProviderFactory _factory;
 		IDbConnection _sharedConnection;
 		IDbTransaction _transaction;
 		int _sharedConnectionDepth;
@@ -1386,6 +1315,11 @@ namespace PetaPoco
 		{
 			_sql = sql;
 			_args = args;
+		}
+
+		public static Sql Builder
+		{
+			get { return new Sql(); }
 		}
 
 		string _sql;
@@ -1494,49 +1428,6 @@ namespace PetaPoco
 				_rhs.Build(sb, args, this);
 		}
 	}
-
-    public class ReflectHelper
-    {
-        public static Type TypeFromAssembly(string typeName, string assemblyName)
-        {
-            try
-            {
-                // Try to get the type from an already loaded assembly
-                Type type = Type.GetType(typeName);
-
-                if (type != null)
-                {
-                    return type;
-                }
-
-                if (assemblyName == null)
-                {
-                    // No assembly was specified for the type, so just fail
-                    string message = "Could not load type " + typeName + ". Possible cause: no assembly name specified.";
-                    throw new TypeLoadException(message);
-                }
-
-                Assembly assembly = Assembly.Load(assemblyName);
-
-                if (assembly == null)
-                {
-                    throw new InvalidOperationException("Can't find assembly: " + assemblyName);
-                }
-
-                type = assembly.GetType(typeName);
-
-                if (type == null)
-                {
-                    return null;
-                }
-
-                return type;
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
-
-    }
+  
+    
 }

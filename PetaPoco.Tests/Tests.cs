@@ -10,10 +10,13 @@ namespace PetaPoco.Tests
 	[TestFixture("sqlserver")]
 	[TestFixture("sqlserverce")]
 	[TestFixture("mysql")]
+	[TestFixture("postgresql")]
 	public class Tests : AssertionHelper
 	{
 		public Tests(string connectionStringName)
 		{
+			var x = new Npgsql.NpgsqlConnection();
+			var a = AppDomain.CurrentDomain.GetAssemblies();
 			_connectionStringName = connectionStringName;
 		}
 
@@ -25,6 +28,7 @@ namespace PetaPoco.Tests
 		public void CreateDB()
 		{
 			db = new Database(_connectionStringName);
+			db.OpenSharedConnection();		// <-- Wow, this is crucial to getting SqlCE to perform.
 			db.Execute(Utils.LoadTextResource(string.Format("PetaPoco.Tests.{0}_init.sql", _connectionStringName)));
 		}
 
@@ -239,7 +243,7 @@ namespace PetaPoco.Tests
 		}
 
 		[Test]
-		public void FetchPage()
+		public void Page()
 		{
 			// In this test we're checking that the page count is correct when there are
 			// not-exactly pagesize*N records (ie: a partial page at the end)
@@ -268,7 +272,29 @@ namespace PetaPoco.Tests
 		}
 
 		[Test]
-		public void FetchPage_boundary()
+		public void FetchPage()
+		{
+			// Create some records
+			const int count = 13;
+			long id = InsertRecords(count);
+
+			// Fetch em
+			var r = db.Fetch<poco>(2, 5, "SELECT * from petapoco ORDER BY id");
+
+			// Check em
+			int i = 0;
+			foreach (var p in r)
+			{
+				Expect(p.id, Is.EqualTo(id + i + 5));
+				i++;
+			}
+
+			// Check other stats
+			Expect(r.Count, Is.EqualTo(5));
+		}
+
+		[Test]
+		public void Page_boundary()
 		{
 			// In this test we're checking that the page count is correct when there are
 			// exactly pagesize*N records.
@@ -623,6 +649,32 @@ namespace PetaPoco.Tests
 			Expect(db.First<deco>("WHERE id>=@0", id), Is.Not.Null);
 		}
 
+		[Test]
+		public void AutoSelect_SelectPresent()
+		{
+			var id = InsertRecords(1);
+			var a = db.SingleOrDefault<deco>("SELECT * FROM petapoco WHERE id=@0", id);
+			Expect(a, Is.Not.Null);
+			Expect(a.id, Is.EqualTo(id));
+		}
+
+		[Test]
+		public void AutoSelect_SelectMissingFromMissing()
+		{
+			var id = InsertRecords(1);
+			var a = db.SingleOrDefault<deco>("WHERE id=@0", id);
+			Expect(a, Is.Not.Null);
+			Expect(a.id, Is.EqualTo(id));
+		}
+
+		[Test]
+		public void AutoSelect_SelectMissingFromPresent()
+		{
+			var id = InsertRecords(1);
+			var a = db.SingleOrDefault<deco>("FROM petapoco WHERE id=@0", id);
+			Expect(a, Is.Not.Null);
+			Expect(a.id, Is.EqualTo(id));
+		}
 	}
 
 }
