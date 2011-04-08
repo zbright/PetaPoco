@@ -175,7 +175,7 @@ namespace PetaPoco
 		{
 			if (_sharedConnectionDepth == 0)
 			{
-				_sharedConnection = _factory as IOracleProvider != null ? ((IOracleProvider)_factory).CreateConnectionOracle() : _factory.CreateConnection();
+				_sharedConnection = _factory.CreateConnection();
 				_sharedConnection.ConnectionString = _connectionString;
 				_sharedConnection.Open();
 		    }
@@ -262,24 +262,27 @@ namespace PetaPoco
 			{
 				string param = m.Value.Substring(1);
 
+				object arg_val;
+
 				int paramIndex;
                 if (int.TryParse(param, out paramIndex))
                 {
                     // Numbered parameter
                     if (paramIndex < 0 || paramIndex >= args_src.Length)
                         throw new ArgumentOutOfRangeException(string.Format("Parameter '@{0}' specified but only {1} parameters supplied (in `{2}`)", paramIndex, args_src.Length, _sql));
-                    args_dest.Add(args_src[paramIndex]);
+					arg_val = args_src[paramIndex];
                 }
                 else
                 {
                     // Look for a property on one of the arguments with this name
                     bool found = false;
+					arg_val = null;
                     foreach (var o in args_src)
                     {
                         var pi = o.GetType().GetProperty(param);
                         if (pi != null)
                         {
-                            args_dest.Add(pi.GetValue(o, null));
+							arg_val = pi.GetValue(o, null);
                             found = true;
                             break;
                         }
@@ -289,16 +292,31 @@ namespace PetaPoco
                         throw new ArgumentException(string.Format("Parameter '@{0}' specified but none of the passed arguments have a property with this name (in '{1}')", param, _sql));
                 }
 
-                return prefix + (args_dest.Count - 1).ToString();
+				// Expand collections to parameter lists
+				if ((arg_val as string) == null && (arg_val as System.Collections.IEnumerable)!=null)
+				{
+					var sb = new StringBuilder();
+					foreach (var i in arg_val as System.Collections.IEnumerable)
+					{
+						sb.Append((sb.Length == 0 ? "@" : ",@") + args_dest.Count.ToString());
+						args_dest.Add(i);
+					}
+					return sb.ToString();
+				}
+				else
+				{
+					args_dest.Add(arg_val);
+					return "@" + (args_dest.Count - 1).ToString();
+			    }
 			}
 			);
 		}
 
 		// Add a parameter to a DB command
-		static void AddParam(IDbCommand cmd, object item, string parameterName)
-		{
+        static void AddParam(IDbCommand cmd, object item, string ParameterPrefix)
+    	{
 			var p = cmd.CreateParameter();
-		    p.ParameterName = parameterName;
+            p.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
 			if (item == null)
 			{
 				p.Value = DBNull.Value;
@@ -328,66 +346,41 @@ namespace PetaPoco
 		}
 
 		// Create a command
-		public IDbCommand CreateCommand(IDbConnection connection, Sql sqlStatement)
+        public IDbCommand CreateCommand(IDbConnection connection, Sql sqlStatement)
 		{
-            // Set parameter prefix on Sql object
-            sqlStatement.ParameterPrefix = _paramPrefix;
-
             var sql = sqlStatement.SQL;
             var args = sqlStatement.Arguments;
 
-            // If we're in MySQL "Allow User Variables", we need to fix up parameter prefixes
-			if (_paramPrefix == "?")
-			{
-				// Convert "@parameter" -> "?parameter", @@uservar -> @uservar and @@@systemvar -> @@systemvar
-				Regex paramReg = new Regex(@"(?<!@)@\w+");
-				sql = paramReg.Replace(sql, m => "?" + m.Value.Substring(1));
-				sql = sql.Replace("@@", "@");
+			// Perform parameter prefix replacements
+			if (_paramPrefix != "@")
+            {
+                sql = Regex.Replace(sql, @"(?<!@)@\w+", m => _paramPrefix + m.Value.Substring(1));
+				sql = sql.Replace("@@", "@");		   // <- double @@ escapes a single @
 			}
-
-			// Create the command and add parameters
+			
 			_lastSql = sql;
 			_lastArgs = args;
 
-            IDbCommand cmd = _factory as IOracleProvider != null ? ((IOracleProvider)_factory).CreateCommandOracle() : _factory.CreateCommand(); //Hack for ODP.NET 10.2 rel 1
+            // Create the command and add parameters
+			IDbCommand cmd = _factory == null ? connection.CreateCommand() : _factory.CreateCommand();
 			cmd.Connection = connection;
             cmd.CommandText = ModifySql(sql);
 			cmd.Transaction = _transaction;
 
-		    AddParameters(cmd, args);
+		    foreach (var item in args)
+			{
+				AddParam(cmd, item, _paramPrefix);
+			}
+
+            if (_dbType == DBType.Oracle)
+            {
+                var _commandType = cmd.GetType();
+                var oracleCommandBindByName = _commandType.GetProperty("BindByName");
+                oracleCommandBindByName.SetValue(cmd, true, null);
+            }
 
 		    return cmd;
 		}
-
-        // add the paramters to the command processing 'in' clauses
-	    private void AddParameters(IDbCommand cmd, object[] args) 
-        {
-	        var count = 0;
-	        if (args.Length > 0)
-	        {
-	            foreach (var item in args)
-	            {
-	                if ((item as IEnumerable<string>) != null || (item as IEnumerable<int>) != null)
-	                {
-	                    var origCount = count;
-	                    var newCount = 0;
-	                    foreach (var parm in (IEnumerable)item)
-	                    {
-	                        AddParam(cmd, parm, _paramPrefix + "i" + origCount + "p" + newCount);
-	                        newCount++;
-	                    }
-
-	                    var newParams = Enumerable.Range(0, newCount).Select(i => _paramPrefix + "i" + origCount + "p" + i).ToArray();
-	                    cmd.CommandText = cmd.CommandText.Replace(_paramPrefix + origCount, "(" + string.Join(",", newParams) + ")");
-	                }
-	                else
-	                {
-	                    AddParam(cmd, item, _paramPrefix + count);
-	                }
-	                count++;
-	            }
-	        }
-	    }
 
 	    public virtual string ModifySql(string sql)
         {
@@ -477,7 +470,7 @@ namespace PetaPoco
             {
                 var pd = PocoData.ForType(typeof(T));
                 if (!rxFrom.IsMatch(sql))
-                    sql = string.Format("SELECT {0} FROM {1} {2}", pd.QueryColumns, pd.TableName, sql);
+					sql = string.Format("SELECT {0} FROM {1} {2}", pd.QueryColumns, pd.TableName, sql);
                 else
                     sql = string.Format("SELECT {0} {1}", pd.QueryColumns, sql);
             }
@@ -571,10 +564,10 @@ namespace PetaPoco
 				throw new Exception("Unable to parse SQL statement for paged query");
 
 			// Build the SQL for the actual final result
-			if (_dbType==DBType.SqlServer || _dbType==DBType.Oracle)
-			{
+            if (_dbType == DBType.SqlServer || _dbType == DBType.Oracle)
+            {
 				sqlSelectRemoved = rxOrderBy.Replace(sqlSelectRemoved, "");
-				sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) rn, {1}) paged WHERE rn>@{2} AND rn<=@{3}",
+				sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) peta_rn, {1}) peta_paged WHERE peta_rn>@{2} AND peta_rn<=@{3}",
 										sqlOrderBy, sqlSelectRemoved, args.Length, args.Length+1);
 				args = args.Concat(new object[] { (page - 1) * itemsPerPage, page * itemsPerPage }).ToArray();
 			}
@@ -637,7 +630,7 @@ namespace PetaPoco
             if (EnableAutoSelect)
 		        sql = AddSelectClause<T>(sql);
 
-		    return Query<T>(new Sql(sql, args));
+    	    return Query<T>(new Sql(sql, args));
 		}
 
 		public IEnumerable<T> Query<T>(Sql sql) where T : new()
@@ -658,7 +651,7 @@ namespace PetaPoco
                         OnException(x);
                         throw;
                     }
-                    var factory = pd.GetFactory<T>(sql + "-" + _sharedConnection.ConnectionString + ForceDateTimesToUtc.ToString(), ForceDateTimesToUtc, r);
+					var factory = pd.GetFactory<T>(sql + "-" + _sharedConnection.ConnectionString + ForceDateTimesToUtc.ToString(), ForceDateTimesToUtc, r);
                     using (r)
                     {
                         while (true)
@@ -771,11 +764,10 @@ namespace PetaPoco
 								cmd.CommandText += string.Format("returning {0} as NewID", primaryKeyName);
 								id = cmd.ExecuteScalar();
 								break;
-                            case DBType.Oracle:
-                                // Support sequences here later
-                                cmd.ExecuteNonQuery();
-						        id = -1;
-						        break;
+							case DBType.Oracle:
+								cmd.ExecuteNonQuery();
+								id = -1;	// Support sequences here later
+								break;										
 							default:
 								cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
 								id = cmd.ExecuteScalar();
@@ -1269,6 +1261,7 @@ namespace PetaPoco
             public Dictionary<string, PocoColumn> Columns { get; private set; }
             Dictionary<string, object> PocoFactories = new Dictionary<string, object>();
         }
+
 
 		// Member variables
 		string _connectionString;
