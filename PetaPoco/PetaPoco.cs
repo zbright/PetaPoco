@@ -55,13 +55,25 @@ namespace PetaPoco
 	[AttributeUsage(AttributeTargets.Class)]
 	public class PrimaryKey : Attribute
 	{
-		public PrimaryKey(string primaryKey)
-		{
-			Value = primaryKey;
-		}
+        public PrimaryKey(string primaryKey)
+        {
+            Value = primaryKey;
+        }
 
-		public string Value { get; private set; }
+	    public string Value { get; private set; }
 	}
+
+    // Specific the sequence name of a poco class
+    [AttributeUsage(AttributeTargets.Class)]
+    public class Sequence : Attribute
+    {
+        public Sequence(string sequenceName)
+        {
+            Value = sequenceName;
+        }
+
+        public string Value { get; private set; }
+    }
 
 	// Results from paged request
 	public class Page<T> where T:new()
@@ -76,10 +88,28 @@ namespace PetaPoco
 	// Optionally provide and implementation of this to Database.Mapper
 	public interface IMapper
 	{
-		void GetTableInfo(Type t, ref string tableName, ref string primaryKey);
+		void GetTableInfo(Type t, ref string tableName, ref string primaryKey, ref string sequenceName);
 		bool MapPropertyToColumn(PropertyInfo pi, ref string columnName, ref bool resultColumn);
 		Func<object, object> GetValueConverter(PropertyInfo pi, Type SourceType);
+	    Func<object, object> GetDbConverter(Type SourceType);
 	}
+
+    public class DefaultMapper : IMapper
+    {
+        public void GetTableInfo(Type t, ref string tableName, ref string primaryKey, ref string sequenceName) { }
+        public bool MapPropertyToColumn(PropertyInfo pi, ref string columnName, ref bool resultColumn)
+        {
+            return true;
+        }
+        public Func<object, object> GetValueConverter(PropertyInfo pi, Type SourceType)
+        {
+            return null;
+        }
+        public Func<object, object> GetDbConverter(Type SourceType)
+        {
+            return x => x;
+        }
+    }
 
 	// Database class ... this is where most of the action happens
 	public class Database : IDisposable
@@ -317,6 +347,11 @@ namespace PetaPoco
     	{
 			var p = cmd.CreateParameter();
             p.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
+
+            // Convert value to from poco type to db type
+            if (Database.Mapper != null)
+                item = Database.Mapper.GetDbConverter(item.GetType())(item);
+
 			if (item == null)
 			{
 				p.Value = DBNull.Value;
@@ -336,10 +371,15 @@ namespace PetaPoco
 						p.Size = 4000;		// Help query plan caching by using common size
                     p.Value = item;
 				}
-				else
-				{
-					p.Value = item;
-				}
+                else if (item.GetType() == typeof(bool))
+                {
+                    // Default bool conversion
+                    p.Value = (bool) item ? 1 : 0;
+                }
+                else
+                {
+                    p.Value = item;
+                }
 			}
 
 			cmd.Parameters.Add(p);
@@ -727,15 +767,28 @@ namespace PetaPoco
 						var names = new List<string>();
 						var values = new List<string>();
 						var index = 0;
+					    object id = null;
+
 						foreach (var i in pd.Columns)
 						{
-							// Don't insert the primary key or result only columns
-							if ((primaryKeyName != null && i.Key == primaryKeyName) || i.Value.ResultColumn)
+						    object value = i.Value.PropertyInfo.GetValue(poco, null);
+                            if ((primaryKeyName != null && i.Key == primaryKeyName))
+                            {
+                                // Don't insert the primary key for non-Oracle
+                                if (_dbType != DBType.Oracle)
+                                    continue;
+                                
+                                value = ExecuteScalar<long>(string.Format("select {0}.nextval from dual", pd.SequenceName));
+                                id = value;
+                            }
+
+						    // Don't insert the result column
+							if (i.Value.ResultColumn)
 								continue;
 
 							names.Add(i.Key);
 							values.Add(string.Format("{0}{1}", _paramPrefix, index++));
-                            AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix + (index - 1));
+                            AddParam(cmd, value, _paramPrefix);
 						}
 
 						cmd.CommandText = string.Format("INSERT INTO {0} ({1}) VALUES ({2})",
@@ -746,8 +799,7 @@ namespace PetaPoco
 
 						_lastSql = cmd.CommandText;
 						_lastArgs = values.ToArray();
-
-						object id;
+						
 						switch (_dbType)
 						{
 							case DBType.SqlServerCE:
@@ -764,8 +816,7 @@ namespace PetaPoco
 								break;
 							case DBType.Oracle:
 								cmd.ExecuteNonQuery();
-								id = -1;	// Support sequences here later
-								break;										
+						        break;										
 							default:
 								cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
 								id = cmd.ExecuteScalar();
@@ -837,12 +888,12 @@ namespace PetaPoco
 							sb.AppendFormat("{0} = {1}{2}", i.Key, _paramPrefix, index++);
 
 							// Store the parameter in the command
-                            AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix + (index - 1));
+                            AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix);
 						}
 
 						cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2} = {3}{4}",
 											tableName, sb.ToString(), primaryKeyName, _paramPrefix,	index++);
-						AddParam(cmd, primaryKeyValue, _paramPrefix + (index-1));
+						AddParam(cmd, primaryKeyValue, _paramPrefix);
 
 						_lastSql = cmd.CommandText;
 						_lastArgs = new object[] { primaryKeyValue };
@@ -1064,11 +1115,17 @@ namespace PetaPoco
                 a = t.GetCustomAttributes(typeof(PrimaryKey), true);
                 var tempPrimaryKey = a.Length == 0 ? "ID" : (a[0] as PrimaryKey).Value;
 
+                // Get the sequence name
+                a = t.GetCustomAttributes(typeof(Sequence), true);
+                var tempSequenceName = a.Length == 0 ? "" : (a[0] as Sequence).Value;
+
                 // Call column mapper
                 if (Database.Mapper != null)
-                    Database.Mapper.GetTableInfo(t, ref tempTableName, ref tempPrimaryKey);
+                    Database.Mapper.GetTableInfo(t, ref tempTableName, ref tempPrimaryKey, ref tempSequenceName);
+
                 TableName = tempTableName;
                 PrimaryKey = tempPrimaryKey;
+                SequenceName = tempSequenceName;
 
                 // Work out bound properties
                 bool ExplicitColumns = t.GetCustomAttributes(typeof(ExplicitColumns), true).Length > 0;
@@ -1255,6 +1312,7 @@ namespace PetaPoco
 
             public string TableName { get; private set; }
             public string PrimaryKey { get; private set; }
+            public string SequenceName { get; private set; }
             public string QueryColumns { get; private set; }
             public Dictionary<string, PocoColumn> Columns { get; private set; }
             Dictionary<string, object> PocoFactories = new Dictionary<string, object>();
