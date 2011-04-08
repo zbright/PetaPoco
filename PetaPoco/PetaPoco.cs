@@ -374,27 +374,25 @@ namespace PetaPoco
 
             if (_dbType == DBType.Oracle)
             {
-                var _commandType = cmd.GetType();
-                var oracleCommandBindByName = _commandType.GetProperty("BindByName");
-                oracleCommandBindByName.SetValue(cmd, true, null);
+                cmd.GetType().GetProperty("BindByName").SetValue(cmd, true, null);
             }
 
 		    return cmd;
 		}
 
-	    public virtual string ModifySql(string sql)
-        {
-            return sql;
-        }
-
-        // Create a command
+	    // Create a command
         IDbCommand CreateCommand(IDbConnection connection, string sql, params object[] args)
         {
             var sqlStatement = new Sql(sql, args);
             return CreateCommand(connection, sqlStatement);
         }
 
-		// Override this to log/capture exceptions
+	    public virtual string ModifySql(string sql)
+	    {
+	        return sql;
+	    }
+
+	    // Override this to log/capture exceptions
 		public virtual void OnException(Exception x)
 		{
 			System.Diagnostics.Debug.WriteLine(x.ToString());
