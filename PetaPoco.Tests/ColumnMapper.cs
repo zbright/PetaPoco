@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using NUnit.Framework;
 
+
 namespace PetaPoco.Tests
 {
 	public class Poco2
@@ -16,7 +17,7 @@ namespace PetaPoco.Tests
 
 	public class MyColumnMapper : PetaPoco.IMapper
 	{
-		public void GetTableInfo(Type t, ref string tableName, ref string primaryKey)
+		public void GetTableInfo(Type t, ref string tableName, ref string primaryKey, ref string sequenceNam)
 		{
 			if (t == typeof(Poco2))
 			{
@@ -24,7 +25,8 @@ namespace PetaPoco.Tests
 				primaryKey = "id";
 			}
 		}
-		public bool MapPropertyToColumn(System.Reflection.PropertyInfo pi, ref string columnName, ref bool resultColumn)
+
+	    public bool MapPropertyToColumn(System.Reflection.PropertyInfo pi, ref string columnName, ref bool resultColumn)
 		{
 			if (pi.DeclaringType == typeof(Poco2))
 			{
@@ -59,6 +61,10 @@ namespace PetaPoco.Tests
 		{
 			return null;
 		}
+
+	    public Func<object, object> GetDbConverter(Type SourceType) {
+	        throw new NotImplementedException();
+	    }
 	}
 
 	[TestFixture]

@@ -26,7 +26,7 @@ namespace PetaPoco.Tests
 		public void CreateDB()
 		{
 			db = new Database(_connectionStringName);
-			db.OpenSharedConnection();		// <-- Wow, this is crucial to getting SqlCE to perform.
+			//db.OpenSharedConnection();		// <-- Wow, this is crucial to getting SqlCE to perform.
 			db.Execute(Utils.LoadTextResource(string.Format("PetaPoco.Tests.{0}_init.sql", _connectionStringName)));
 		}
 
