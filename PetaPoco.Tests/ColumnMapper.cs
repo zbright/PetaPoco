@@ -63,7 +63,7 @@ namespace PetaPoco.Tests
 		}
 
 	    public Func<object, object> GetDbConverter(Type SourceType) {
-	        throw new NotImplementedException();
+            return x => x;
 	    }
 	}
 
