@@ -744,7 +744,7 @@ namespace PetaPoco
 		}
 		public T First<T>(Sql sql) where T : new()
 		{
-			return Fetch<T>(sql).FirstOrDefault();
+			return Fetch<T>(sql).First();
 		}
 		public T FirstOrDefault<T>(Sql sql) where T : new()
 		{
