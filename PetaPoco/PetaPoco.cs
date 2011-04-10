@@ -527,38 +527,9 @@ namespace PetaPoco
 		    return Fetch<T>(new Sql(sql, args));
 		}
             
-		public List<T> Fetch<T>(Sql sql) where T : new()
-		{
-            try
-            {
-                OpenSharedConnection();
-                try
-                {
-                    using (var cmd = CreateCommand(_sharedConnection, sql))
-                    {
-                        using (var r = cmd.ExecuteReader())
-                        {
-                            var l = new List<T>();
-                            var pd = PocoData.ForType(typeof(T));
-                            var factory = pd.GetFactory<T>(sql + "-" + _sharedConnection.ConnectionString + ForceDateTimesToUtc.ToString(), ForceDateTimesToUtc, r);
-                            while (r.Read())
-                            {
-                                l.Add(factory(r));
-                            }
-                            return l;
-                        }
-                    }
-                }
-                finally
-                {
-                    CloseSharedConnection();
-                }
-            }
-            catch (Exception x)
-            {
-                OnException(x);
-                throw;
-            } 
+		public List<T> Fetch<T>(Sql sql) where T : new() 
+        {
+		    return Query<T>(sql).ToList();
 		}
 
 		static Regex rxColumns = new Regex(@"^\s*SELECT\s+((?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|.)*?)(?<!,\s+)\bFROM\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
