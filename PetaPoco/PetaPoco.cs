@@ -737,6 +737,7 @@ namespace PetaPoco
 						var pd = PocoData.ForType(poco.GetType());
 						var names = new List<string>();
 						var values = new List<string>();
+					    var args = new List<object>();
 						var index = 0;
 					    object id = null;
 
@@ -760,6 +761,7 @@ namespace PetaPoco
 							names.Add(i.Key);
 							values.Add(string.Format("{0}{1}", _paramPrefix, index++));
                             AddParam(cmd, value, _paramPrefix);
+						    args.Add(value);
 						}
 
 						cmd.CommandText = string.Format("INSERT INTO {0} ({1}) VALUES ({2})",
@@ -769,7 +771,7 @@ namespace PetaPoco
 								);
 
 						_lastSql = cmd.CommandText;
-						_lastArgs = values.ToArray();
+					    _lastArgs = args.ToArray();
 						
 						switch (_dbType)
 						{
