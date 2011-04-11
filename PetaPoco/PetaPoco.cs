@@ -1354,7 +1354,7 @@ namespace PetaPoco
 		string _sqlFinal;
 		object[] _argsFinal;
 
-		void Build()
+		private void Build()
 		{
 			// already built?
 			if (_sqlFinal != null)
@@ -1406,27 +1406,32 @@ namespace PetaPoco
 			return Append(new Sql("WHERE " + sql, args));
 		}
 
-		public Sql OrderBy(params object[] args)
+        public Sql OrderBy(params object[] columns)
 		{
-			return Append(new Sql("ORDER BY " + String.Join(", ", (from x in args select x.ToString()).ToArray())));
+			return Append(new Sql("ORDER BY " + String.Join(", ", (from x in columns select x.ToString()).ToArray())));
 		}
 
-		public Sql Select(params object[] args)
+		public Sql Select(params object[] columns)
 		{
-			return Append(new Sql("SELECT " + String.Join(", ", (from x in args select x.ToString()).ToArray())));
+			return Append(new Sql("SELECT " + String.Join(", ", (from x in columns select x.ToString()).ToArray())));
 		}
 
-		public Sql From(params object[] args)
+		public Sql From(params object[] tables)
 		{
-			return Append(new Sql("FROM " + String.Join(", ", (from x in args select x.ToString()).ToArray())));
+			return Append(new Sql("FROM " + String.Join(", ", (from x in tables select x.ToString()).ToArray())));
 		}
+
+        public SqlOn Join(string table)
+        {
+            return new SqlOn(Append(new Sql("INNER JOIN " + table)));
+        }
 
 		static bool Is(Sql sql, string sqltype)
 		{
 			return sql != null && sql._sql != null && sql._sql.StartsWith(sqltype, StringComparison.InvariantCultureIgnoreCase);
 		}
 
-		public void Build(StringBuilder sb, List<object> args, Sql lhs)
+		private void Build(StringBuilder sb, List<object> args, Sql lhs)
 		{
 			if (!String.IsNullOrEmpty(_sql))
 			{
@@ -1450,6 +1455,21 @@ namespace PetaPoco
 			if (_rhs != null)
 				_rhs.Build(sb, args, this);
 		}
+
+        public class SqlOn
+        {
+            private readonly Sql _sql;
+
+            public SqlOn(Sql sql)
+            {
+                _sql = sql;
+            }
+
+            public Sql On(string onClause, params object[] args)
+            {
+                return _sql.Append("ON " + onClause, args);
+            }
+        }
 	}
   
     
