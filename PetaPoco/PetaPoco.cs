@@ -744,8 +744,7 @@ namespace PetaPoco
 						var values = new List<string>();
 					    var args = new List<object>();
 						var index = 0;
-					    object id = null;
-
+					    
 						foreach (var i in pd.Columns)
 						{
 						    object value = i.Value.PropertyInfo.GetValue(poco, null);
@@ -778,7 +777,9 @@ namespace PetaPoco
 
 						_lastSql = cmd.CommandText;
 					    _lastArgs = args.ToArray();
-						
+
+					    object id;
+
 						switch (_dbType)
 						{
 							case DBType.SqlServerCE:
@@ -800,7 +801,6 @@ namespace PetaPoco
 						        param.Value = DBNull.Value;
 						        param.Direction = ParameterDirection.ReturnValue;
 						        param.DbType = DbType.Int32;
-						        param.SourceColumn = primaryKeyName;
 						        cmd.Parameters.Add(param);
                                 cmd.ExecuteNonQuery();
 						        id = param.Value;
