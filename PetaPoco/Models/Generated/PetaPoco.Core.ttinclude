@@ -1015,6 +1015,7 @@ class OracleSchemaReader : SchemaReader
 		var cmd=_factory.CreateCommand();
 		cmd.Connection=connection;
 		cmd.CommandText=TABLE_SQL;
+		cmd.GetType().GetProperty("BindByName").SetValue(cmd, true, null);
 
 		//pull the tables in a reader
 		using(cmd)
@@ -1059,6 +1060,7 @@ class OracleSchemaReader : SchemaReader
 		{
 			cmd.Connection=_connection;
 			cmd.CommandText=COLUMN_SQL;
+			cmd.GetType().GetProperty("BindByName").SetValue(cmd, true, null);
 
 			var p = cmd.CreateParameter();
 			p.ParameterName = ":tableName";
@@ -1095,6 +1097,7 @@ and ucc.position = 1";
 		{
 			cmd.Connection=_connection;
 			cmd.CommandText=sql;
+			cmd.GetType().GetProperty("BindByName").SetValue(cmd, true, null);
 
 			var p = cmd.CreateParameter();
 			p.ParameterName = ":tableName";
