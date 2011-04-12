@@ -1073,7 +1073,7 @@ class OracleSchemaReader : SchemaReader
 					Column col=new Column();
 					col.Name=rdr["ColumnName"].ToString();
 					col.PropertyName=CleanUp(col.Name);
-					col.PropertyType=GetPropertyType(rdr["DataType"].ToString());
+					col.PropertyType=GetPropertyType(rdr["DataType"].ToString(), (rdr["DataType"] == DBNull.Value ? null : rdr["DataType"].ToString()));
 					col.IsNullable=rdr["IsNullable"].ToString()=="YES";
 					result.Add(col);
 				}
@@ -1110,10 +1110,10 @@ and ucc.position = 1";
 		return "";
 	}
 	
-	string GetPropertyType(string sqlType)
+	string GetPropertyType(string sqlType, string dataScale)
 	{
 		string sysType="string";
-		switch (sqlType) 
+		switch (sqlType.ToLower()) 
 		{
 			case "bigint":
 				sysType = "long";
@@ -1156,6 +1156,10 @@ and ucc.position = 1";
 				sysType=  "byte[]";
 				 break;
 		}
+		
+		if (sqlType == "number" && dataScale == "0")
+			return "long";
+		
 		return sysType;
 	}
 
@@ -1166,6 +1170,7 @@ and ucc.position = 1";
 	const string COLUMN_SQL=@"select table_name TableName, 
  column_name ColumnName, 
  data_type DataType, 
+ data_scale DataScale,
  nullable IsNullable
  from USER_TAB_COLS utc 
  where table_name = upper(:tableName)
