@@ -111,8 +111,53 @@ namespace PetaPoco
         }
     }
 
+    public interface IDatabase
+    {
+        void Dispose();
+        IDbConnection Connection { get; }
+        Transaction Transaction { get; }
+        void BeginTransaction();
+        void AbortTransaction();
+        void CompleteTransaction();
+        int Execute(string sql, params object[] args);
+        int Execute(Sql sql);
+        T ExecuteScalar<T>(string sql, params object[] args);
+        T ExecuteScalar<T>(Sql sql);
+        List<T> Fetch<T>(string sql, params object[] args) where T : new();
+        List<T> Fetch<T>(Sql sql) where T : new();
+        Page<T> Page<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new();
+        Page<T> Page<T>(long page, long itemsPerPage, Sql sql) where T : new();
+        List<T> Fetch<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new();
+        List<T> Fetch<T>(long page, long itemsPerPage, Sql sql) where T : new();
+        IEnumerable<T> Query<T>(string sql, params object[] args) where T : new();
+        IEnumerable<T> Query<T>(Sql sql) where T : new();
+        T Single<T>(string sql, params object[] args) where T : new();
+        T SingleOrDefault<T>(string sql, params object[] args) where T : new();
+        T First<T>(string sql, params object[] args) where T : new();
+        T FirstOrDefault<T>(string sql, params object[] args) where T : new();
+        T Single<T>(Sql sql) where T : new();
+        T SingleOrDefault<T>(Sql sql) where T : new();
+        T First<T>(Sql sql) where T : new();
+        T FirstOrDefault<T>(Sql sql) where T : new();
+        object Insert(string tableName, string primaryKeyName, object poco);
+        object Insert(object poco);
+        int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue);
+        int Update(string tableName, string primaryKeyName, object poco);
+        int Update(object poco);
+        int Update(object poco, object primaryKeyValue);
+        int Update<T>(string sql, params object[] args);
+        int Update<T>(Sql sql);
+        int Delete(string tableName, string primaryKeyName, object poco);
+        int Delete(string tableName, string primaryKeyName, object poco, object primaryKeyValue);
+        int Delete(object poco);
+        int Delete<T>(string sql, params object[] args);
+        int Delete<T>(Sql sql);
+        void Save(string tableName, string primaryKeyName, object poco);
+        void Save(object poco);
+    }
+
     // Database class ... this is where most of the action happens
-    public class Database : IDisposable
+    public class Database : IDisposable, IDatabase
     {
 		public Database(IDbConnection connection)
 		{
@@ -800,7 +845,7 @@ namespace PetaPoco
 						        param.ParameterName = ":newid";
 						        param.Value = DBNull.Value;
 						        param.Direction = ParameterDirection.ReturnValue;
-						        param.DbType = DbType.Int32;
+						        param.DbType = DbType.Int64;
 						        cmd.Parameters.Add(param);
                                 cmd.ExecuteNonQuery();
 						        id = param.Value;
