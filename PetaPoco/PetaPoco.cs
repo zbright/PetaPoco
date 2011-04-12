@@ -752,11 +752,12 @@ namespace PetaPoco
                             if ((primaryKeyName != null && i.Key == primaryKeyName))
                             {
                                 // Don't insert the primary key for non-Oracle
-                                if (_dbType != DBType.Oracle)
-                                    continue;
-                                
-                                value = ExecuteScalar<long>(string.Format("select {0}.nextval from dual", pd.SequenceName));
-                                id = value;
+                                if (_dbType == DBType.Oracle)
+                                {
+                                    names.Add(i.Key);
+                                    values.Add(string.Format("{0}.nextval", pd.SequenceName));
+                                }
+                                continue;
                             }
 
 						    // Don't insert the result column
@@ -789,11 +790,20 @@ namespace PetaPoco
 								id = cmd.ExecuteScalar();
 								break;
 							case DBType.PostgreSQL:
-								cmd.CommandText += string.Format("returning {0} as NewID", primaryKeyName);
+								cmd.CommandText += string.Format(" returning {0} as NewID", primaryKeyName);
 								id = cmd.ExecuteScalar();
 								break;
 							case DBType.Oracle:
-								cmd.ExecuteNonQuery();
+                                cmd.CommandText += string.Format(" returning {0} into :newid", primaryKeyName);
+						        var param = cmd.CreateParameter();
+						        param.ParameterName = ":newid";
+						        param.Value = DBNull.Value;
+						        param.Direction = ParameterDirection.ReturnValue;
+						        param.DbType = DbType.Int32;
+						        param.SourceColumn = primaryKeyName;
+						        cmd.Parameters.Add(param);
+                                cmd.ExecuteNonQuery();
+						        id = param.Value;
 						        break;										
 							default:
 								cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
