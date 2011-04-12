@@ -1348,7 +1348,7 @@ namespace PetaPoco
             public string SequenceName { get; private set; }
             public string QueryColumns { get; private set; }
             public Dictionary<string, PocoColumn> Columns { get; private set; }
-            Dictionary<string, object> PocoFactories = new Dictionary<string, object>();
+            static Dictionary<string, object> PocoFactories = new Dictionary<string, object>();
         }
 
 		// Member variables
