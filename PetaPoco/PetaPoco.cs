@@ -74,18 +74,6 @@ namespace PetaPoco
 		public string sequenceName { get; set; }
 	}
 
-    // Specific the sequence name of a poco class
-    [AttributeUsage(AttributeTargets.Class)]
-    public class Sequence : Attribute
-    {
-        public Sequence(string sequenceName)
-        {
-            Value = sequenceName;
-        }
-
-        public string Value { get; private set; }
-    }
-
 	// Results from paged request
 	public class Page<T> where T:new()
 	{
