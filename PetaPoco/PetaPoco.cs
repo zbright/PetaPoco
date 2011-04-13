@@ -111,26 +111,23 @@ namespace PetaPoco
         }
     }
 
-    public interface IDatabase
+    public interface IDatabaseQuery
     {
-        void Dispose();
-        IDbConnection Connection { get; }
-        Transaction Transaction { get; }
-        void BeginTransaction();
-        void AbortTransaction();
-        void CompleteTransaction();
         int Execute(string sql, params object[] args);
         int Execute(Sql sql);
         T ExecuteScalar<T>(string sql, params object[] args);
         T ExecuteScalar<T>(Sql sql);
+        List<T> Fetch<T>() where T : new();
         List<T> Fetch<T>(string sql, params object[] args) where T : new();
         List<T> Fetch<T>(Sql sql) where T : new();
-        Page<T> Page<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new();
-        Page<T> Page<T>(long page, long itemsPerPage, Sql sql) where T : new();
         List<T> Fetch<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new();
         List<T> Fetch<T>(long page, long itemsPerPage, Sql sql) where T : new();
+        Page<T> Page<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new();
+        Page<T> Page<T>(long page, long itemsPerPage, Sql sql) where T : new();
         IEnumerable<T> Query<T>(string sql, params object[] args) where T : new();
         IEnumerable<T> Query<T>(Sql sql) where T : new();
+        T Single<T>(object primaryKeyValue) where T : new();
+        T SingleOrDefault<T>(object primaryKeyValue) where T : new();
         T Single<T>(string sql, params object[] args) where T : new();
         T SingleOrDefault<T>(string sql, params object[] args) where T : new();
         T First<T>(string sql, params object[] args) where T : new();
@@ -139,6 +136,16 @@ namespace PetaPoco
         T SingleOrDefault<T>(Sql sql) where T : new();
         T First<T>(Sql sql) where T : new();
         T FirstOrDefault<T>(Sql sql) where T : new();
+    }
+
+    public interface IDatabase : IDatabaseQuery
+    {
+        void Dispose();
+        IDbConnection Connection { get; }
+        Transaction Transaction { get; }
+        void BeginTransaction();
+        void AbortTransaction();
+        void CompleteTransaction();
         object Insert(string tableName, string primaryKeyName, object poco);
         object Insert(object poco);
         int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue);
@@ -587,6 +594,23 @@ namespace PetaPoco
 		    return Query<T>(sql).ToList();
 		}
 
+        public List<T> Fetch<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new()
+        {
+            string sqlCount, sqlPage;
+            BuildPageQueries<T>(page, itemsPerPage, sql, ref args, out sqlCount, out sqlPage);
+            return Fetch<T>(sqlPage, args);
+        }
+
+        public List<T> Fetch<T>(long page, long itemsPerPage, Sql sql) where T : new()
+        {
+            return Fetch<T>(page, itemsPerPage, sql.SQL, sql.Arguments);
+        }
+
+        public List<T> Fetch<T>() where T : new()
+        {
+            return Fetch<T>(AddSelectClause<T>(""));
+        }
+
 		static Regex rxColumns = new Regex(@"^\s*SELECT\s+((?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|.)*?)(?<!,\s+)\bFROM\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
 		static Regex rxOrderBy = new Regex(@"\bORDER\s+BY\s+(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?(?:\s*,\s*(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?)*", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
 		public static bool SplitSqlForPaging(string sql, out string sqlCount, out string sqlSelectRemoved, out string sqlOrderBy)
@@ -675,19 +699,6 @@ namespace PetaPoco
 			return Page<T>(page, itemsPerPage, sql.SQL, sql.Arguments);
 		}
 
-
-		public List<T> Fetch<T>(long page, long itemsPerPage, string sql, params object[] args) where T : new()
-		{
-			string sqlCount, sqlPage;
-			BuildPageQueries<T>(page, itemsPerPage, sql, ref args, out sqlCount, out sqlPage);
-			return Fetch<T>(sqlPage, args);
-		}
-
-		public List<T> Fetch<T>(long page, long itemsPerPage, Sql sql) where T : new()
-		{
-			return Fetch<T>(page, itemsPerPage, sql.SQL, sql.Arguments);
-		}
-
 		// Return an enumerable collection of pocos
 		public IEnumerable<T> Query<T>(string sql, params object[] args) where T : new()
 		{
@@ -744,6 +755,22 @@ namespace PetaPoco
             }
 		}
 
+        private static string GetSqlForPkSelect<T>()
+        {
+            var pd = PocoData.ForType(typeof(T));
+            return string.Format("SELECT {0} FROM {1} {2}", pd.QueryColumns, pd.TableName, string.Format("WHERE {0} = @0", pd.PrimaryKey));
+        }
+
+        public T Single<T>(object primaryKeyValue) where T : new()
+        {
+            var sql = GetSqlForPkSelect<T>();
+            return Single<T>(sql, primaryKeyValue);
+        }
+        public T SingleOrDefault<T>(object primaryKeyValue) where T : new()
+        {
+            var sql = GetSqlForPkSelect<T>();
+            return SingleOrDefault<T>(sql, primaryKeyValue);
+        }
 		public T Single<T>(string sql, params object[] args) where T : new()
 		{
 			return Fetch<T>(sql, args).Single();
@@ -1106,7 +1133,7 @@ namespace PetaPoco
 				if (_lastSql == null)
 					return "";
 				sb.Append(_lastSql);
-				if (_lastArgs != null)
+				if (_lastArgs != null && _lastArgs.Length > 0)
 				{
 					sb.Append("\r\n\r\n");
 					for (int i = 0; i < _lastArgs.Length; i++)
