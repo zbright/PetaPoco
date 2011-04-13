@@ -64,6 +64,7 @@ namespace PetaPoco.Tests
 			o.content = string.Format("insert {0}", r.Next());
 			o.date_created = now;
 			o.date_edited = now;
+			o.state = State.Yes;
 
 			return o;
 		}
@@ -81,6 +82,7 @@ namespace PetaPoco.Tests
 			o.content = string.Format("insert {0}", r.Next());
 			o.date_created = now;
 			o.date_edited = now;
+			o.state = State.Maybe;
 
 			return o;
 		}
@@ -93,6 +95,7 @@ namespace PetaPoco.Tests
 			Expect(a.content, Is.EqualTo(b.content));
 			Expect(a.date_created, Is.EqualTo(b.date_created));
 			Expect(a.date_edited, Is.EqualTo(b.date_edited));
+			Expect(a.state, Is.EqualTo(b.state));
 		}
 
 		void Assert(deco a, deco b)
@@ -102,6 +105,7 @@ namespace PetaPoco.Tests
 			Expect(a.draft, Is.EqualTo(b.draft));
 			Expect(a.content, Is.EqualTo(b.content));
 			Expect(a.date_created, Is.EqualTo(b.date_created));
+			Expect(a.state, Is.EqualTo(b.state));
 		}
 
 		// Insert some records, return the id of the first
@@ -112,6 +116,9 @@ namespace PetaPoco.Tests
 			{
 				var o=CreatePoco();
 				db.Insert("petapoco", "id", o);
+
+				var lc = db.LastCommand;
+
 				if (i == 0)
 				{
 					lFirst = o.id;
@@ -645,6 +652,33 @@ namespace PetaPoco.Tests
 		{
 			var id = InsertRecords(2);
 			Expect(db.First<deco>("WHERE id>=@0", id), Is.Not.Null);
+		}
+
+		[Test]
+		public void SingleOrDefault_PK_Empty()
+		{
+			Expect(db.SingleOrDefault<deco>(0), Is.Null);
+		}
+
+		[Test]
+		public void SingleOrDefault_PK_Single()
+		{
+			var id = InsertRecords(1);
+			Expect(db.SingleOrDefault<deco>(id), Is.Not.Null);
+		}
+
+		[Test]
+		[ExpectedException(typeof(InvalidOperationException))]
+		public void Single_PK_Empty()
+		{
+			db.Single<deco>(0);
+		}
+
+		[Test]
+		public void Single_PK_Single()
+		{
+			var id = InsertRecords(1);
+			Expect(db.Single<deco>(id), Is.Not.Null);
 		}
 
 		[Test]

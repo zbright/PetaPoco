@@ -1,4 +1,14 @@
-﻿using System;
+﻿/* PetaPoco - A Tiny ORMish thing for your POCO's.
+ * Copyright © 2011 Topten Software.  All Rights Reserved.
+ * 
+ * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
+ * 
+ * Special thanks to Rob Conery (@robconery) for original inspiration (ie:Massive) and for 
+ * use of Subsonic's T4 templates, Rob Sullivan (@DataChomp) for hard core DBA advice 
+ * and Adam Schroder (@schotime) for lots of suggestions, improvements and Oracle support
+ */
+
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,53 +24,54 @@ namespace PetaPoco
 {
 	// Poco's marked [Explicit] require all column properties to be marked
 	[AttributeUsage(AttributeTargets.Class)]
-	public class ExplicitColumns : Attribute
+	public class ExplicitColumnsAttribute : Attribute
 	{
 	}
 	// For non-explicit pocos, causes a property to be ignored
 	[AttributeUsage(AttributeTargets.Property)]
-	public class Ignore : Attribute
+	public class IgnoreAttribute : Attribute
 	{
 	}
 
 	// For explicit pocos, marks property as a column
 	[AttributeUsage(AttributeTargets.Property)]
-	public class Column : Attribute
+	public class ColumnAttribute : Attribute
 	{
-		public Column() { }
-		public Column(string name) { Name = name; }
+		public ColumnAttribute() { }
+		public ColumnAttribute(string name) { Name = name; }
 		public string Name { get; set; }
 	}
 
 	// For explicit pocos, marks property as a column
 	[AttributeUsage(AttributeTargets.Property)]
-	public class ResultColumn : Column
+	public class ResultColumnAttribute : ColumnAttribute
 	{
-		public ResultColumn() { }
-		public ResultColumn(string name) : base(name) {  }
+		public ResultColumnAttribute() { }
+		public ResultColumnAttribute(string name) : base(name) { }
 	}
 
 	// Specify the table name of a poco
 	[AttributeUsage(AttributeTargets.Class)]
-	public class TableName : Attribute
+	public class TableNameAttribute : Attribute
 	{
-		public TableName(string tableName)
+		public TableNameAttribute(string tableName)
 		{
 			Value = tableName;
 		}
 		public string Value { get; private set; }
 	}
 
-	// Specific the primary key of a poco class
+	// Specific the primary key of a poco class (and optional sequence name for Oracle)
 	[AttributeUsage(AttributeTargets.Class)]
-	public class PrimaryKey : Attribute
+	public class PrimaryKeyAttribute : Attribute
 	{
-        public PrimaryKey(string primaryKey)
-        {
-            Value = primaryKey;
-        }
+		public PrimaryKeyAttribute(string primaryKey)
+		{
+			Value = primaryKey;
+		}
 
 	    public string Value { get; private set; }
+		public string sequenceName { get; set; }
 	}
 
     // Specific the sequence name of a poco class
@@ -90,8 +101,8 @@ namespace PetaPoco
 	{
 		void GetTableInfo(Type t, ref string tableName, ref string primaryKey, ref string sequenceName);
 		bool MapPropertyToColumn(PropertyInfo pi, ref string columnName, ref bool resultColumn);
-		Func<object, object> GetValueConverter(PropertyInfo pi, Type SourceType);
-	    Func<object, object> GetDbConverter(Type SourceType);
+		Func<object, object> GetFromDbConverter(PropertyInfo pi, Type SourceType);
+		Func<object, object> GetToDbConverter(Type SourceType);
 	}
 
     public class DefaultMapper : IMapper
@@ -101,13 +112,13 @@ namespace PetaPoco
         {
             return true;
         }
-        public virtual Func<object, object> GetValueConverter(PropertyInfo pi, Type SourceType)
+        public virtual Func<object, object> GetFromDbConverter(PropertyInfo pi, Type SourceType)
         {
             return null;
         }
-        public virtual Func<object, object> GetDbConverter(Type SourceType)
+        public virtual Func<object, object> GetToDbConverter(Type SourceType)
         {
-            return x => x;
+            return null;
         }
     }
 
@@ -126,8 +137,8 @@ namespace PetaPoco
         Page<T> Page<T>(long page, long itemsPerPage, Sql sql) where T : new();
         IEnumerable<T> Query<T>(string sql, params object[] args) where T : new();
         IEnumerable<T> Query<T>(Sql sql) where T : new();
-        T Single<T>(object primaryKeyValue) where T : new();
-        T SingleOrDefault<T>(object primaryKeyValue) where T : new();
+        T Single<T>(object primaryKey) where T : new();
+        T SingleOrDefault<T>(object primaryKey) where T : new();
         T Single<T>(string sql, params object[] args) where T : new();
         T SingleOrDefault<T>(string sql, params object[] args) where T : new();
         T First<T>(string sql, params object[] args) where T : new();
@@ -275,16 +286,16 @@ namespace PetaPoco
 		    }
 		}
 
-        // Access to underlying connection
-        public IDbConnection Connection
-        {
-            get { return _sharedConnection; }
-        }
+		// Access to our shared connection
+		public IDbConnection Connection
+		{
+			get { return _sharedConnection; }
+		}
 
 		// Helper to create a transaction scope
 		public Transaction Transaction
 		{
-			get { return new Transaction(this); }
+			get	{ return new Transaction(this);	}
 		}
 
         public virtual void OnCommandCreated() { }
@@ -402,14 +413,18 @@ namespace PetaPoco
 		}
 
 		// Add a parameter to a DB command
-        static void AddParam(IDbCommand cmd, object item, string ParameterPrefix)
-    	{
+		void AddParam(IDbCommand cmd, object item, string ParameterPrefix)
+		{
+			// Convert value to from poco type to db type
+			if (Database.Mapper != null && item!=null)
+			{
+				var fn = Database.Mapper.GetToDbConverter(item.GetType());
+				if (fn!=null)
+					item = fn(item);
+			}
+			
 			var p = cmd.CreateParameter();
             p.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
-
-            // Convert value to from poco type to db type
-            if (Database.Mapper != null)
-                item = Database.Mapper.GetDbConverter(item.GetType())(item);
 
 			if (item == null)
 			{
@@ -417,7 +432,11 @@ namespace PetaPoco
 			}
 			else
 			{
-				if (item.GetType() == typeof(Guid))
+				if (item.GetType().IsEnum)		// PostgreSQL .NET driver wont cast enum to int
+				{
+					p.Value = (int)item;
+				}
+				else if (item.GetType() == typeof(Guid))
 				{
 					p.Value = item.ToString();
 					p.DbType = DbType.String;
@@ -430,21 +449,22 @@ namespace PetaPoco
 						p.Size = 4000;		// Help query plan caching by using common size
                     p.Value = item;
 				}
-                else if (item.GetType() == typeof(bool))
-                {
-                    // Default bool conversion
-                    p.Value = (bool) item ? 1 : 0;
-                }
-                else
-                {
-                    p.Value = item;
-                }
+				else if (item.GetType() == typeof(bool) && _dbType != DBType.PostgreSQL)
+				{
+					// Default bool conversion
+					p.Value = ((bool)item) ? 1 : 0;
+				}
+				else
+				{
+					p.Value = item;
+				}
 			}
 
 			cmd.Parameters.Add(p);
 		}
 
 		// Create a command
+		static Regex rxParamsPrefix = new Regex(@"(?<!@)@\w+", RegexOptions.Compiled);
         public IDbCommand CreateCommand(IDbConnection connection, Sql sqlStatement)
 		{
             var sql = sqlStatement.SQL;
@@ -452,18 +472,15 @@ namespace PetaPoco
 
 			// Perform parameter prefix replacements
 			if (_paramPrefix != "@")
-            {
-                sql = Regex.Replace(sql, @"(?<!@)@\w+", m => _paramPrefix + m.Value.Substring(1));
+			{
+				sql = rxParamsPrefix.Replace(sql, m => _paramPrefix + m.Value.Substring(1));
 				sql = sql.Replace("@@", "@");		   // <- double @@ escapes a single @
 			}
-			
-			_lastSql = sql;
-			_lastArgs = args;
 
             // Create the command and add parameters
 			IDbCommand cmd = _factory == null ? connection.CreateCommand() : _factory.CreateCommand();
 			cmd.Connection = connection;
-            cmd.CommandText = ModifySql(sql);
+            cmd.CommandText = sql;
 			cmd.Transaction = _transaction;
 
 		    foreach (var item in args)
@@ -471,15 +488,15 @@ namespace PetaPoco
 				AddParam(cmd, item, _paramPrefix);
 			}
 
-            if (_dbType == DBType.Oracle)
-            {
-                cmd.GetType().GetProperty("BindByName").SetValue(cmd, true, null);
-            }
+			if (_dbType == DBType.Oracle)
+			{
+				cmd.GetType().GetProperty("BindByName").SetValue(cmd, true, null);
+			}
 
-            if (!string.IsNullOrEmpty(cmd.CommandText))
-                OnCommandCreated();
+			if (!String.IsNullOrEmpty(sql))
+				DoPreExecute(cmd);
 
-		    return cmd;
+			return cmd;
 		}
 
 	    // Create a command
@@ -489,17 +506,16 @@ namespace PetaPoco
             return CreateCommand(connection, sqlStatement);
         }
 
-	    public virtual string ModifySql(string sql)
-	    {
-	        return sql;
-	    }
-
 	    // Override this to log/capture exceptions
 		public virtual void OnException(Exception x)
 		{
 			System.Diagnostics.Debug.WriteLine(x.ToString());
 			System.Diagnostics.Debug.WriteLine(LastCommand);
 		}
+
+		// Override this to log commands, or modify command before execution
+		public virtual void OnExecutingCommand(IDbCommand cmd) { }
+
 
 		// Execute a non-query command
 		public int Execute(string sql, params object[] args)
@@ -755,53 +771,45 @@ namespace PetaPoco
             }
 		}
 
-        private static string GetSqlForPkSelect<T>()
-        {
-            var pd = PocoData.ForType(typeof(T));
-            return string.Format("SELECT {0} FROM {1} {2}", pd.QueryColumns, pd.TableName, string.Format("WHERE {0} = @0", pd.PrimaryKey));
-        }
-
-        public T Single<T>(object primaryKeyValue) where T : new()
-        {
-            var sql = GetSqlForPkSelect<T>();
-            return Single<T>(sql, primaryKeyValue);
-        }
-        public T SingleOrDefault<T>(object primaryKeyValue) where T : new()
-        {
-            var sql = GetSqlForPkSelect<T>();
-            return SingleOrDefault<T>(sql, primaryKeyValue);
-        }
+		public T Single<T>(object primaryKey) where T : new()
+		{
+			return Single<T>(string.Format("WHERE {0}=@0", PocoData.ForType(typeof(T)).PrimaryKey), primaryKey);
+		}
+		public T SingleOrDefault<T>(object primaryKey) where T : new()
+		{
+			return SingleOrDefault<T>(string.Format("WHERE {0}=@0", PocoData.ForType(typeof(T)).PrimaryKey), primaryKey);
+		}
 		public T Single<T>(string sql, params object[] args) where T : new()
 		{
-			return Fetch<T>(sql, args).Single();
+			return Query<T>(sql, args).Single();
 		}
 		public T SingleOrDefault<T>(string sql, params object[] args) where T : new()
 		{
-			return Fetch<T>(sql, args).SingleOrDefault();
+			return Query<T>(sql, args).SingleOrDefault();
 		}
 		public T First<T>(string sql, params object[] args) where T : new()
 		{
-			return Fetch<T>(sql, args).First();
+			return Query<T>(sql, args).First();
 		}
 		public T FirstOrDefault<T>(string sql, params object[] args) where T : new()
 		{
-			return Fetch<T>(sql, args).FirstOrDefault();
+			return Query<T>(sql, args).FirstOrDefault();
 		}
 		public T Single<T>(Sql sql) where T : new()
 		{
-            return Fetch<T>(sql).Single();
+            return Query<T>(sql).Single();
 		}
 		public T SingleOrDefault<T>(Sql sql) where T : new()
 		{
-			return Fetch<T>(sql).SingleOrDefault();
+			return Query<T>(sql).SingleOrDefault();
 		}
 		public T First<T>(Sql sql) where T : new()
 		{
-			return Fetch<T>(sql).First();
+			return Query<T>(sql).First();
 		}
 		public T FirstOrDefault<T>(Sql sql) where T : new()
 		{
-			return Fetch<T>(sql).FirstOrDefault();
+			return Query<T>(sql).FirstOrDefault();
 		}
 
 		// Insert a poco into a table.  If the poco has a property with the same name 
@@ -819,31 +827,27 @@ namespace PetaPoco
 						var pd = PocoData.ForType(poco.GetType());
 						var names = new List<string>();
 						var values = new List<string>();
-					    var args = new List<object>();
 						var index = 0;
-					    
 						foreach (var i in pd.Columns)
 						{
-						    object value = i.Value.PropertyInfo.GetValue(poco, null);
-                            if ((primaryKeyName != null && i.Key == primaryKeyName))
-                            {
-                                // Added sequence and primary key column name to sql
-                                if (_dbType == DBType.Oracle)
-                                {
-                                    names.Add(i.Key);
-                                    values.Add(string.Format("{0}.nextval", pd.SequenceName));
-                                }
-                                continue;
-                            }
-
-						    // Don't insert the result column
+							// Don't insert result columns
 							if (i.Value.ResultColumn)
 								continue;
 
+							// Don't insert the primary key (except under oracle where we need bring in the next sequence value)
+							if (primaryKeyName != null && i.Key == primaryKeyName)
+							{
+								if (_dbType == DBType.Oracle && !string.IsNullOrEmpty(pd.SequenceName))
+								{
+									names.Add(i.Key);
+									values.Add(string.Format("{0}.nextval", pd.SequenceName));
+								}
+								continue;
+							}
+
 							names.Add(i.Key);
 							values.Add(string.Format("{0}{1}", _paramPrefix, index++));
-                            AddParam(cmd, value, _paramPrefix);
-						    args.Add(value);
+                            AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix);
 						}
 
 						cmd.CommandText = string.Format("INSERT INTO {0} ({1}) VALUES ({2})",
@@ -852,8 +856,6 @@ namespace PetaPoco
 								string.Join(",", values.ToArray())
 								);
 
-						_lastSql = cmd.CommandText;
-					    _lastArgs = (from IDataParameter parameter in cmd.Parameters select parameter.Value).ToArray();
 
 					    OnCommandCreated();
 
@@ -862,33 +864,57 @@ namespace PetaPoco
 						switch (_dbType)
 						{
 							case DBType.SqlServerCE:
-							    cmd.ExecuteNonQuery();
-							    id = ExecuteScalar<object>("SELECT @@IDENTITY AS NewID;");
+								DoPreExecute(cmd);
+								cmd.ExecuteNonQuery();
+								id = ExecuteScalar<object>("SELECT @@IDENTITY AS NewID;");
 								break;
 							case DBType.SqlServer:
 								cmd.CommandText += ";\nSELECT SCOPE_IDENTITY() AS NewID;";
+								DoPreExecute(cmd);
 								id = cmd.ExecuteScalar();
 								break;
 							case DBType.PostgreSQL:
-								cmd.CommandText += string.Format(" returning {0} as NewID", primaryKeyName);
-								id = cmd.ExecuteScalar();
+								if (primaryKeyName != null)
+								{
+									cmd.CommandText += string.Format("returning {0} as NewID", primaryKeyName);
+									DoPreExecute(cmd);
+									id = cmd.ExecuteScalar();
+								}
+								else
+								{
+									id = -1;
+									DoPreExecute(cmd);
+									cmd.ExecuteNonQuery();
+								}
 								break;
 							case DBType.Oracle:
-                                cmd.CommandText += string.Format(" returning {0} into :newid", primaryKeyName);
-						        var param = cmd.CreateParameter();
-						        param.ParameterName = ":newid";
-						        param.Value = DBNull.Value;
-						        param.Direction = ParameterDirection.ReturnValue;
-						        param.DbType = DbType.Int64;
-						        cmd.Parameters.Add(param);
-                                cmd.ExecuteNonQuery();
-						        id = param.Value;
-						        break;										
+								if (primaryKeyName != null)
+								{
+									cmd.CommandText += string.Format(" returning {0} into :newid", primaryKeyName);
+									var param = cmd.CreateParameter();
+									param.ParameterName = ":newid";
+									param.Value = DBNull.Value;
+									param.Direction = ParameterDirection.ReturnValue;
+									param.DbType = DbType.Int64;
+									cmd.Parameters.Add(param);
+									DoPreExecute(cmd);
+									cmd.ExecuteNonQuery();
+									id = param.Value;
+								}
+								else
+								{
+									id = -1;
+									DoPreExecute(cmd);
+									cmd.ExecuteNonQuery();
+								}
+								break;
 							default:
 								cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
+								DoPreExecute(cmd);
 								id = cmd.ExecuteScalar();
 								break;
 						}
+
 
 						// Assign the ID back to the primary key property
 						if (primaryKeyName != null)
@@ -962,8 +988,7 @@ namespace PetaPoco
 											tableName, sb.ToString(), primaryKeyName, _paramPrefix,	index++);
 						AddParam(cmd, primaryKeyValue, _paramPrefix);
 
-						_lastSql = cmd.CommandText;
-                        _lastArgs = (from IDataParameter parameter in cmd.Parameters select parameter.Value).ToArray();
+						DoPreExecute(cmd);
 
                         OnCommandCreated();
 
@@ -1123,27 +1148,41 @@ namespace PetaPoco
 			Save(pd.TableName, pd.PrimaryKey, poco);
 		}
 
+		void DoPreExecute(IDbCommand cmd)
+		{
+			OnExecutingCommand(cmd);
+			_lastSql = cmd.CommandText;
+			_lastArgs = (from IDataParameter parameter in cmd.Parameters select parameter.Value).ToArray();
+		}
+
 		public string LastSQL { get { return _lastSql; } }
 		public object[] LastArgs { get { return _lastArgs; } }
 		public string LastCommand
 		{
-			get
-			{
-				var sb = new StringBuilder();
-				if (_lastSql == null)
-					return "";
-				sb.Append(_lastSql);
-				if (_lastArgs != null && _lastArgs.Length > 0)
-				{
-					sb.Append("\r\n\r\n");
-					for (int i = 0; i < _lastArgs.Length; i++)
-					{
-						sb.AppendFormat("{0} - \"{1}\" - {2}\r\n", _paramPrefix + i, _lastArgs[i], _lastArgs[i].GetType().Name);
-					}
-				}
-				return sb.ToString();
-			}
+            get { return FormatLastCommand(_lastSql, _lastArgs); }
 		}
+
+        protected string FormatLastCommand(IDbCommand cmd) 
+        {
+            return FormatLastCommand(cmd.CommandText, (from IDataParameter parameter in cmd.Parameters select parameter.Value).ToArray());
+        }
+
+        protected string FormatLastCommand(string sql, object[] args) 
+        {
+            var sb = new StringBuilder();
+            if (sql == null)
+                return "";
+            sb.Append(sql);
+            if (args != null && args.Length > 0)
+            {
+                sb.Append("\r\n\r\n");
+                for (int i = 0; i < args.Length; i++)
+                {
+                    sb.AppendFormat("{0}{1} [{2}] = \"{3}\"\r\n", _paramPrefix, i, args[i].GetType().Name, args[i]);
+                }
+            }
+            return sb.ToString();
+        }
 
 		public static IMapper Mapper
 		{
@@ -1157,18 +1196,17 @@ namespace PetaPoco
 			public PropertyInfo PropertyInfo;
 			public bool ResultColumn;
 		}
-
         internal class PocoData
         {
             public static PocoData ForType(Type t)
             {
-                lock (m_PocoData)
+                lock (m_PocoDatas)
                 {
                     PocoData pd;
-                    if (!m_PocoData.TryGetValue(t, out pd))
+                    if (!m_PocoDatas.TryGetValue(t, out pd))
                     {
                         pd = new PocoData(t);
-                        m_PocoData.Add(t, pd);
+                        m_PocoDatas.Add(t, pd);
                     }
                     return pd;
                 }
@@ -1177,32 +1215,28 @@ namespace PetaPoco
             public PocoData(Type t)
             {
                 // Get the table name
-                var a = t.GetCustomAttributes(typeof(TableName), true);
-                var tempTableName = a.Length == 0 ? t.Name : (a[0] as TableName).Value;
+                var a = t.GetCustomAttributes(typeof(TableNameAttribute), true);
+                var tempTableName = a.Length == 0 ? t.Name : (a[0] as TableNameAttribute).Value;
 
                 // Get the primary key
-                a = t.GetCustomAttributes(typeof(PrimaryKey), true);
-                var tempPrimaryKey = a.Length == 0 ? "ID" : (a[0] as PrimaryKey).Value;
-
-                // Get the sequence name
-                a = t.GetCustomAttributes(typeof(Sequence), true);
-                var tempSequenceName = a.Length == 0 ? "" : (a[0] as Sequence).Value;
+                a = t.GetCustomAttributes(typeof(PrimaryKeyAttribute), true);
+                var tempPrimaryKey = a.Length == 0 ? "ID" : (a[0] as PrimaryKeyAttribute).Value;
+                var tempSequenceName = a.Length == 0 ? null : (a[0] as PrimaryKeyAttribute).sequenceName;
 
                 // Call column mapper
                 if (Database.Mapper != null)
                     Database.Mapper.GetTableInfo(t, ref tempTableName, ref tempPrimaryKey, ref tempSequenceName);
-
                 TableName = tempTableName;
                 PrimaryKey = tempPrimaryKey;
                 SequenceName = tempSequenceName;
 
                 // Work out bound properties
-                bool ExplicitColumns = t.GetCustomAttributes(typeof(ExplicitColumns), true).Length > 0;
+                bool ExplicitColumns = t.GetCustomAttributes(typeof(ExplicitColumnsAttribute), true).Length > 0;
                 Columns = new Dictionary<string, PocoColumn>(StringComparer.OrdinalIgnoreCase);
                 foreach (var pi in t.GetProperties())
                 {
                     // Work out if properties is to be included
-                    var ColAttrs = pi.GetCustomAttributes(typeof(Column), true);
+                    var ColAttrs = pi.GetCustomAttributes(typeof(ColumnAttribute), true);
                     if (ExplicitColumns)
                     {
                         if (ColAttrs.Length == 0)
@@ -1210,7 +1244,7 @@ namespace PetaPoco
                     }
                     else
                     {
-                        if (pi.GetCustomAttributes(typeof(Ignore), true).Length != 0)
+                        if (pi.GetCustomAttributes(typeof(IgnoreAttribute), true).Length != 0)
                             continue;
                     }
 
@@ -1220,9 +1254,9 @@ namespace PetaPoco
                     // Work out the DB column name
                     if (ColAttrs.Length > 0)
                     {
-                        var colattr = (Column)ColAttrs[0];
+                        var colattr = (ColumnAttribute)ColAttrs[0];
                         pc.ColumnName = colattr.Name;
-                        if ((colattr as ResultColumn) != null)
+                        if ((colattr as ResultColumnAttribute) != null)
                             pc.ResultColumn = true;
                     }
                     if (pc.ColumnName == null)
@@ -1238,6 +1272,12 @@ namespace PetaPoco
 
                 // Build column list for automatic select
                 QueryColumns = string.Join(", ", (from c in Columns where !c.Value.ResultColumn select c.Key).ToArray());
+            }
+
+            bool IsIntegralType(Type t)
+            {
+                var tc = Type.GetTypeCode(t);
+                return tc >= TypeCode.SByte && tc <= TypeCode.UInt64;
             }
 
             // Create factory function that can convert a IDataReader record into a POCO
@@ -1286,7 +1326,7 @@ namespace PetaPoco
                             // Get converter from the mapper
                             if (Database.Mapper != null)
                             {
-                                converter = Database.Mapper.GetValueConverter(pc.PropertyInfo, srcType);
+                                converter = Database.Mapper.GetFromDbConverter(pc.PropertyInfo, srcType);
                             }
 
                             // Standard DateTime->Utc mapper
@@ -1295,10 +1335,20 @@ namespace PetaPoco
                                 converter = delegate(object src) { return new DateTime(((DateTime)src).Ticks, DateTimeKind.Utc); };
                             }
 
-                            // Forced type conversion
-                            if (converter == null && !dstType.IsAssignableFrom(srcType))
+                            // Forced type conversion including integral types -> enum
+                            if (converter == null)
                             {
-                                converter = delegate(object src) { return Convert.ChangeType(src, dstType, null); };
+                                if (dstType.IsEnum && IsIntegralType(srcType))
+                                {
+                                    if (srcType != typeof(int))
+                                    {
+                                        converter = delegate(object src) { return Convert.ChangeType(src, typeof(int), null); };
+                                    }
+                                }
+                                else if (!dstType.IsAssignableFrom(srcType))
+                                {
+                                    converter = delegate(object src) { return Convert.ChangeType(src, dstType, null); };
+                                }
                             }
 
                             // Fast
@@ -1370,21 +1420,19 @@ namespace PetaPoco
             }
 
 
-            static Dictionary<Type, PocoData> m_PocoData = new Dictionary<Type, PocoData>();
+            static Dictionary<Type, PocoData> m_PocoDatas = new Dictionary<Type, PocoData>();
             static List<Func<object, object>> m_Converters = new List<Func<object, object>>();
-
             static MethodInfo fnGetValue = typeof(IDataRecord).GetMethod("GetValue", new Type[] { typeof(int) });
             static MethodInfo fnIsDBNull = typeof(IDataRecord).GetMethod("IsDBNull");
             static FieldInfo fldConverters = typeof(PocoData).GetField("m_Converters", BindingFlags.Static | BindingFlags.GetField | BindingFlags.NonPublic);
             static MethodInfo fnListGetItem = typeof(List<Func<object, object>>).GetProperty("Item").GetGetMethod();
             static MethodInfo fnInvoke = typeof(Func<object, object>).GetMethod("Invoke");
-
             public string TableName { get; private set; }
             public string PrimaryKey { get; private set; }
             public string SequenceName { get; private set; }
             public string QueryColumns { get; private set; }
             public Dictionary<string, PocoColumn> Columns { get; private set; }
-            static Dictionary<string, object> PocoFactories = new Dictionary<string, object>();
+            Dictionary<string, object> PocoFactories = new Dictionary<string, object>();
         }
 
 		// Member variables
@@ -1496,31 +1544,6 @@ namespace PetaPoco
 			return Append(new Sql(sql, args));
 		}
 
-		public Sql Where(string sql, params object[] args)
-		{
-			return Append(new Sql("WHERE " + sql, args));
-		}
-
-        public Sql OrderBy(params object[] columns)
-		{
-			return Append(new Sql("ORDER BY " + String.Join(", ", (from x in columns select x.ToString()).ToArray())));
-		}
-
-		public Sql Select(params object[] columns)
-		{
-			return Append(new Sql("SELECT " + String.Join(", ", (from x in columns select x.ToString()).ToArray())));
-		}
-
-		public Sql From(params object[] tables)
-		{
-			return Append(new Sql("FROM " + String.Join(", ", (from x in tables select x.ToString()).ToArray())));
-		}
-
-        public SqlOn Join(string table)
-        {
-            return new SqlOn(Append(new Sql("INNER JOIN " + table)));
-        }
-
 		static bool Is(Sql sql, string sqltype)
 		{
 			return sql != null && sql._sql != null && sql._sql.StartsWith(sqltype, StringComparison.InvariantCultureIgnoreCase);
@@ -1551,21 +1574,53 @@ namespace PetaPoco
 				_rhs.Build(sb, args, this);
 		}
 
-        public class SqlOn
-        {
-            private readonly Sql _sql;
+		public Sql Where(string sql, params object[] args)
+		{
+			return Append(new Sql("WHERE " + sql, args));
+		}
 
-            public SqlOn(Sql sql)
-            {
-                _sql = sql;
-            }
+		public Sql OrderBy(params object[] columns)
+		{
+			return Append(new Sql("ORDER BY " + String.Join(", ", (from x in columns select x.ToString()).ToArray())));
+		}
 
-            public Sql On(string onClause, params object[] args)
-            {
-                return _sql.Append("ON " + onClause, args);
-            }
-        }
+		public Sql Select(params object[] columns)
+		{
+			return Append(new Sql("SELECT " + String.Join(", ", (from x in columns select x.ToString()).ToArray())));
+		}
+
+		public Sql From(params object[] tables)
+		{
+			return Append(new Sql("FROM " + String.Join(", ", (from x in tables select x.ToString()).ToArray())));
+		}
+
+		public Sql GroupBy(params object[] columns)
+		{
+			return Append(new Sql("GROUP BY " + String.Join(", ", (from x in columns select x.ToString()).ToArray())));
+		}
+
+		private SqlJoinClause Join(string JoinType, string table)
+		{
+			return new SqlJoinClause(Append(new Sql(JoinType + table)));
+		}
+
+		public SqlJoinClause InnerJoin(string table) { return Join("INNER JOIN ", table); }
+		public SqlJoinClause LeftOuterJoin(string table) { return Join("LEFT OUTER JOIN ", table); }
+
+		public class SqlJoinClause
+		{
+			private readonly Sql _sql;
+
+			public SqlJoinClause(Sql sql)
+			{
+				_sql = sql;
+			}
+
+			public Sql On(string onClause, params object[] args)
+			{
+				return _sql.Append("ON " + onClause, args);
+			}
+		}
 	}
-  
-    
+
 }

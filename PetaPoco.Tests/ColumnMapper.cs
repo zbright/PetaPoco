@@ -17,7 +17,7 @@ namespace PetaPoco.Tests
 
 	public class MyColumnMapper : PetaPoco.IMapper
 	{
-		public void GetTableInfo(Type t, ref string tableName, ref string primaryKey, ref string sequenceNam)
+		public void GetTableInfo(Type t, ref string tableName, ref string primaryKey, ref string sequenceName)
 		{
 			if (t == typeof(Poco2))
 			{
@@ -57,14 +57,15 @@ namespace PetaPoco.Tests
 		}
 
 
-		public Func<object, object> GetValueConverter(System.Reflection.PropertyInfo pi, Type SourceType)
+		public Func<object, object> GetFromDbConverter(System.Reflection.PropertyInfo pi, Type SourceType)
 		{
 			return null;
 		}
 
-	    public Func<object, object> GetDbConverter(Type SourceType) {
-            return x => x;
-	    }
+		public Func<object, object> GetToDbConverter(Type SourceType)
+		{
+			return null;
+		}
 	}
 
 	[TestFixture]

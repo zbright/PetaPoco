@@ -21,7 +21,7 @@
 
 /*
  This code is part of the PetaPoco project (http://www.toptensoftware.com/petapoco).
- It is based on the SubSonic T4 templates but has considerably re-organized and reduced
+ It is based on the SubSonic T4 templates but has been considerably re-organized and reduced
  
  -----------------------------------------------------------------------------------------
 
@@ -31,6 +31,7 @@
 	* SQL Server CE
 	* MySQL
 	* PostGreSQL
+	* Oracle
 
  For connection and provider settings the template will look for the web.config or app.config file of the 
  containing Visual Studio project.  It will not however read DbProvider settings from this file.
@@ -1143,7 +1144,7 @@ and ucc.position = 1";
 			case "smallmoney":
 			case "decimal":
 			case "money":
-			case "number"
+			case "number":
 				sysType=  "decimal";
 				 break;
 			case "tinyint":
