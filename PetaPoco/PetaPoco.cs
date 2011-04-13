@@ -826,9 +826,9 @@ namespace PetaPoco
 								);
 
 						_lastSql = cmd.CommandText;
-					    _lastArgs = args.ToArray();
+					    _lastArgs = (from IDataParameter parameter in cmd.Parameters select parameter.Value).ToArray();
 
-                        OnCommandCreated();
+					    OnCommandCreated();
 
 					    object id;
 
@@ -936,7 +936,7 @@ namespace PetaPoco
 						AddParam(cmd, primaryKeyValue, _paramPrefix);
 
 						_lastSql = cmd.CommandText;
-						_lastArgs = new object[] { primaryKeyValue };
+                        _lastArgs = (from IDataParameter parameter in cmd.Parameters select parameter.Value).ToArray();
 
                         OnCommandCreated();
 
