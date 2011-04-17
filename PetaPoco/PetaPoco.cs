@@ -821,7 +821,7 @@ namespace PetaPoco
 								continue;
 
 							// Don't insert the primary key (except under oracle where we need bring in the next sequence value)
-							if (primaryKeyName != null && i.Key == primaryKeyName)
+							if (primaryKeyName != null && string.Compare(i.Key, primaryKeyName, true) == 0)
 							{
 								if (_dbType == DBType.Oracle && !string.IsNullOrEmpty(pd.SequenceName))
 								{
@@ -948,7 +948,7 @@ namespace PetaPoco
 						foreach (var i in pd.Columns)
 						{
 							// Don't update the primary key, but grab the value if we don't have it
-							if (i.Key == primaryKeyName)
+							if (string.Compare(i.Key, primaryKeyName, true) == 0)
 							{
 								if (primaryKeyValue == null)
 									primaryKeyValue = i.Value.PropertyInfo.GetValue(poco, null);
