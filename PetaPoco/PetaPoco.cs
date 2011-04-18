@@ -135,6 +135,7 @@ namespace PetaPoco
         T SingleOrDefault<T>(Sql sql) where T : new();
         T First<T>(Sql sql) where T : new();
         T FirstOrDefault<T>(Sql sql) where T : new();
+        bool Exists<T>(object primaryKey) where T : new();
     }
 
     public interface IDatabase : IDatabaseQuery
@@ -158,6 +159,7 @@ namespace PetaPoco
         int Delete(object poco);
         int Delete<T>(string sql, params object[] args);
         int Delete<T>(Sql sql);
+        int Delete<T>(object pocoOrPrimaryKey);
         void Save(string tableName, string primaryKeyName, object poco);
         void Save(object poco);
     }
