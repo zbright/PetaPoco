@@ -757,6 +757,10 @@ namespace PetaPoco
             }
 		}
 
+		public bool Exists<T>(object primaryKey) where T : new()
+		{
+			return FirstOrDefault<T>(string.Format("WHERE {0}=@0", PocoData.ForType(typeof(T)).PrimaryKey), primaryKey) != null;
+		}
 		public T Single<T>(object primaryKey) where T : new()
 		{
 			return Single<T>(string.Format("WHERE {0}=@0", PocoData.ForType(typeof(T)).PrimaryKey), primaryKey);
@@ -821,7 +825,7 @@ namespace PetaPoco
 								continue;
 
 							// Don't insert the primary key (except under oracle where we need bring in the next sequence value)
-							if (primaryKeyName != null && string.Compare(i.Key, primaryKeyName, true) == 0)
+							if (primaryKeyName != null && string.Compare(i.Key, primaryKeyName, true)==0)
 							{
 								if (_dbType == DBType.Oracle && !string.IsNullOrEmpty(pd.SequenceName))
 								{
@@ -948,7 +952,7 @@ namespace PetaPoco
 						foreach (var i in pd.Columns)
 						{
 							// Don't update the primary key, but grab the value if we don't have it
-							if (string.Compare(i.Key, primaryKeyName, true) == 0)
+							if (string.Compare(i.Key, primaryKeyName, true)==0)
 							{
 								if (primaryKeyValue == null)
 									primaryKeyValue = i.Value.PropertyInfo.GetValue(poco, null);
@@ -1045,6 +1049,14 @@ namespace PetaPoco
 		{
 			var pd = PocoData.ForType(poco.GetType());
 			return Delete(pd.TableName, pd.PrimaryKey, poco);
+		}
+
+		public int Delete<T>(object pocoOrPrimaryKey)
+		{
+			if (pocoOrPrimaryKey.GetType() == typeof(T))
+				return Delete(pocoOrPrimaryKey);
+			var pd = PocoData.ForType(typeof(T));
+			return Delete(pd.TableName, pd.PrimaryKey, null, pocoOrPrimaryKey);
 		}
 
 		public int Delete<T>(string sql, params object[] args)
