@@ -112,6 +112,8 @@ namespace PetaPoco
 
     public interface IDatabaseQuery
     {
+        void OpenSharedConnection();
+        void CloseSharedConnection();
         int Execute(string sql, params object[] args);
         int Execute(Sql sql);
         T ExecuteScalar<T>(string sql, params object[] args);
@@ -254,7 +256,7 @@ namespace PetaPoco
         }
 
 		// Open a connection (can be nested)
-		void OpenSharedConnection()
+        public void OpenSharedConnection()
 		{
 			if (_sharedConnectionDepth == 0)
 			{
@@ -266,7 +268,7 @@ namespace PetaPoco
 		}
 
 		// Close a previously opened connection
-		void CloseSharedConnection()
+        public void CloseSharedConnection()
 		{
 			_sharedConnectionDepth--;
 			if (_sharedConnectionDepth == 0)
