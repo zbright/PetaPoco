@@ -829,6 +829,8 @@ namespace PetaPoco
 						var names = new List<string>();
 						var values = new List<string>();
 						var index = 0;
+					    var versionName = "";
+
 						foreach (var i in pd.Columns)
 						{
 							// Don't insert result columns
@@ -849,7 +851,12 @@ namespace PetaPoco
 							names.Add(i.Key);
 							values.Add(string.Format("{0}{1}", _paramPrefix, index++));
 
-						    object val = i.Value.VersionColumn ? 1 : i.Value.PropertyInfo.GetValue(poco, null);
+						    object val = i.Value.PropertyInfo.GetValue(poco, null);
+                            if (i.Value.VersionColumn)
+                            {
+                                val = 1;
+                                versionName = i.Key;
+                            }
 
 						    AddParam(cmd, val, _paramPrefix);
 						}
@@ -928,6 +935,16 @@ namespace PetaPoco
 							}
 						}
 
+                        // Assign the Version column
+                        if (!string.IsNullOrEmpty(versionName))
+                        {
+                            PocoColumn pc;
+                            if (pd.Columns.TryGetValue(versionName, out pc))
+                            {
+                                pc.PropertyInfo.SetValue(poco, Convert.ChangeType(1, pc.PropertyInfo.PropertyType), null);
+                            }
+                        }
+
 						return id;
 					}
 				}
@@ -965,6 +982,7 @@ namespace PetaPoco
 						var pd = PocoData.ForType(poco.GetType());
 					    string versionName = null;
 					    object versionValue = null;
+                        
 
 						foreach (var i in pd.Columns)
 						{
@@ -980,11 +998,13 @@ namespace PetaPoco
 						    if (i.Value.ResultColumn)
 						        continue;
 
+						    object val = i.Value.PropertyInfo.GetValue(poco, null);
+
 						    if (i.Value.VersionColumn)
 						    {
 						        versionName = i.Key;
-						        versionValue = i.Value.PropertyInfo.GetValue(poco, null);
-						        continue;
+                                versionValue = val;
+						        val = Convert.ToInt64(val) + 1;
 						    }
 
 					        // Build the sql
@@ -994,11 +1014,8 @@ namespace PetaPoco
                             sb.AppendFormat("{0} = {1}{2}", i.Key, _paramPrefix, index++);
 
 							// Store the parameter in the command
-                            AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix);
+                            AddParam(cmd, val, _paramPrefix);
 						}
-
-					    if (!string.IsNullOrEmpty(versionName))
-					        sb.AppendFormat(", {0} = {0} + 1", versionName);
 
 					    cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2} = {3}{4}",
 											tableName, sb.ToString(), primaryKeyName, _paramPrefix,	index++);
@@ -1014,7 +1031,18 @@ namespace PetaPoco
 						DoPreExecute(cmd);
 
 						// Do it
-						return cmd.ExecuteNonQuery();
+						var result = cmd.ExecuteNonQuery();
+
+                        // Set Version
+                        if (!string.IsNullOrEmpty(versionName)) {
+                            PocoColumn pc;
+                            if (pd.Columns.TryGetValue(versionName, out pc))
+                            {
+                                pc.PropertyInfo.SetValue(poco, Convert.ChangeType(Convert.ToInt64(versionValue)+1, pc.PropertyInfo.PropertyType), null);
+                            }
+                        }
+
+                        return result;
 					}
 				}
                 finally
