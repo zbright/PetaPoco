@@ -74,6 +74,13 @@ namespace PetaPoco
 		public string sequenceName { get; set; }
 	}
 
+    [AttributeUsage(AttributeTargets.Property)]
+    public class VersionColumnAttribute : ColumnAttribute
+    {
+        public VersionColumnAttribute() {}
+        public VersionColumnAttribute(string name) : base(name) { }
+    }
+
 	// Results from paged request
 	public class Page<T> where T:new()
 	{
@@ -839,7 +846,10 @@ namespace PetaPoco
 
 							names.Add(i.Key);
 							values.Add(string.Format("{0}{1}", _paramPrefix, index++));
-                            AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix);
+
+						    object val = i.Value.VersionColumn ? 1 : i.Value.PropertyInfo.GetValue(poco, null);
+
+						    AddParam(cmd, val, _paramPrefix);
 						}
 
 						cmd.CommandText = string.Format("INSERT INTO {0} ({1}) VALUES ({2})",
@@ -951,32 +961,53 @@ namespace PetaPoco
 						var sb = new StringBuilder();
 						var index = 0;
 						var pd = PocoData.ForType(poco.GetType());
+					    string versionName = null;
+					    object versionValue = null;
+
 						foreach (var i in pd.Columns)
 						{
-							// Don't update the primary key, but grab the value if we don't have it
-							if (string.Compare(i.Key, primaryKeyName, true)==0)
-							{
-								if (primaryKeyValue == null)
-									primaryKeyValue = i.Value.PropertyInfo.GetValue(poco, null);
-								continue;
-							}
+						    // Don't update the primary key, but grab the value if we don't have it
+						    if (string.Compare(i.Key, primaryKeyName, true) == 0)
+						    {
+						        if (primaryKeyValue == null)
+						            primaryKeyValue = i.Value.PropertyInfo.GetValue(poco, null);
+						        continue;
+						    }
 
-							// Dont update result only columns
-							if (i.Value.ResultColumn)
-								continue;
+						    // Dont update result only columns
+						    if (i.Value.ResultColumn)
+						        continue;
 
-							// Build the sql
+						    if (i.Value.VersionColumn)
+						    {
+						        versionName = i.Key;
+						        versionValue = i.Value.PropertyInfo.GetValue(poco, null);
+						        continue;
+						    }
+
+					        // Build the sql
 							if (index > 0)
 								sb.Append(", ");
-							sb.AppendFormat("{0} = {1}{2}", i.Key, _paramPrefix, index++);
+
+                            sb.AppendFormat("{0} = {1}{2}", i.Key, _paramPrefix, index++);
 
 							// Store the parameter in the command
                             AddParam(cmd, i.Value.PropertyInfo.GetValue(poco, null), _paramPrefix);
 						}
 
-						cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2} = {3}{4}",
+					    if (!string.IsNullOrEmpty(versionName))
+					        sb.AppendFormat(", {0} = {0} + 1", versionName);
+
+					    cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2} = {3}{4}",
 											tableName, sb.ToString(), primaryKeyName, _paramPrefix,	index++);
-						AddParam(cmd, primaryKeyValue, _paramPrefix);
+						
+                        AddParam(cmd, primaryKeyValue, _paramPrefix);
+
+                        if (!string.IsNullOrEmpty(versionName))
+                        {
+                            cmd.CommandText += string.Format(" AND {0} = {1}{2}", versionName, _paramPrefix, index++);
+                            AddParam(cmd, versionValue, _paramPrefix);
+                        }
 
 						DoPreExecute(cmd);
 
@@ -1191,6 +1222,7 @@ namespace PetaPoco
 			public string ColumnName;
 			public PropertyInfo PropertyInfo;
 			public bool ResultColumn;
+		    public bool VersionColumn;
 		}
         internal class PocoData
         {
@@ -1254,6 +1286,8 @@ namespace PetaPoco
                         pc.ColumnName = colattr.Name;
                         if ((colattr as ResultColumnAttribute) != null)
                             pc.ResultColumn = true;
+                        if ((colattr as VersionColumnAttribute) != null)
+                            pc.VersionColumn = true;
                     }
                     if (pc.ColumnName == null)
                     {
@@ -1261,7 +1295,7 @@ namespace PetaPoco
                         if (Database.Mapper != null && !Database.Mapper.MapPropertyToColumn(pi, ref pc.ColumnName, ref pc.ResultColumn))
                             continue;
                     }
-
+                    
                     // Store it
                     Columns.Add(pc.ColumnName, pc);
                 }
