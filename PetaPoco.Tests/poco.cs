@@ -29,7 +29,7 @@ namespace PetaPoco.Tests
 
 	// Attributed not-so-true poco
 	[TableName("petapoco")]
-	[PrimaryKey("id", sequenceName="article_id_seq")]
+	[PrimaryKey("id", SequenceName="article_id_seq")]
 	[ExplicitColumnsAttribute]
 	class deco
 	{
