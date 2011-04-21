@@ -10,7 +10,8 @@ CREATE TABLE petapoco (
 	date_edited		datetime NULL,
 	content			VARCHAR(MAX) NOT NULL,
 	state			int NOT NULL,
-	version			int NULL,
+	[col w space]	int,
+	version			int,
 	
 	PRIMARY KEY (id)
 );

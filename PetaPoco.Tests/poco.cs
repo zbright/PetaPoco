@@ -24,35 +24,38 @@ namespace PetaPoco.Tests
 		public DateTime? date_edited { get; set; }
 		public string content { get; set; }
 		public State state { get; set; }
+		[Column("col w space")] public int col_w_space { get; set; }
 	}
 
 
 	// Attributed not-so-true poco
 	[TableName("petapoco")]
 	[PrimaryKey("id", SequenceName="article_id_seq")]
-	[ExplicitColumnsAttribute]
+	[ExplicitColumns]
 	class deco
 	{
-		[ColumnAttribute] public long id { get; set; }
-		[ColumnAttribute] public string title { get; set; }
-		[ColumnAttribute] public bool draft { get; set; }
-		[ColumnAttribute] public DateTime date_created { get; set; }
-		[ColumnAttribute] public DateTime? date_edited { get; set; }
-		[ColumnAttribute] public string content { get; set; }
-		[ColumnAttribute] public State state { get; set; }
+		[Column]public long id { get; set; }
+		[Column]public string title { get; set; }
+		[Column]public bool draft { get; set; }
+		[Column]public DateTime date_created { get; set; }
+		[Column]public DateTime? date_edited { get; set; }
+		[Column]public string content { get; set; }
+		[Column]public State state { get; set; }
+		[Column("col w space")] public int col_w_space { get; set; }
 	}
 	// Attributed not-so-true poco
 	[TableName("petapoco")]
 	[PrimaryKey("id")]
-	[ExplicitColumnsAttribute]
+	[ExplicitColumns]
 	class deco_explicit
 	{
-		[ColumnAttribute] public long id { get; set; }
-		[ColumnAttribute] public string title { get; set; }
-		[ColumnAttribute] public bool draft { get; set; }
-		[ColumnAttribute] public DateTime date_created { get; set; }
-		[ColumnAttribute] public State state { get; set; }
+		[Column]public long id { get; set; }
+		[Column]public string title { get; set; }
+		[Column]public bool draft { get; set; }
+		[Column]public DateTime date_created { get; set; }
+		[Column]public State state { get; set; }
 		public string content { get; set; }
+		[Column("col w space")]public int col_w_space { get; set; }
 	}
 
 	// Attributed not-so-true poco
@@ -65,7 +68,8 @@ namespace PetaPoco.Tests
 		public bool draft { get; set; }
 		public DateTime date_created { get; set; }
 		public State state { get; set; }
-		[IgnoreAttribute] public string content { get; set; }
+		[Ignore] public string content { get; set; }
+		[Column("col w space")] public int col_w_space { get; set; }
 	}
 
     [TableName("petapoco")]

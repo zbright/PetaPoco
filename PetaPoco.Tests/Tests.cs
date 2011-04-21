@@ -65,6 +65,7 @@ namespace PetaPoco.Tests
 			o.date_created = now;
 			o.date_edited = now;
 			o.state = State.Yes;
+			o.col_w_space = 23;
 
 			return o;
 		}
@@ -83,6 +84,7 @@ namespace PetaPoco.Tests
 			o.date_created = now;
 			o.date_edited = now;
 			o.state = State.Maybe;
+			o.col_w_space = 23;
 
 			return o;
 		}
@@ -113,6 +115,7 @@ namespace PetaPoco.Tests
 			Expect(a.date_created, Is.EqualTo(b.date_created));
 			Expect(a.date_edited, Is.EqualTo(b.date_edited));
 			Expect(a.state, Is.EqualTo(b.state));
+			Expect(a.col_w_space, Is.EqualTo(b.col_w_space));
 		}
 
 		void Assert(deco a, deco b)
@@ -123,6 +126,7 @@ namespace PetaPoco.Tests
 			Expect(a.content, Is.EqualTo(b.content));
 			Expect(a.date_created, Is.EqualTo(b.date_created));
 			Expect(a.state, Is.EqualTo(b.state));
+			Expect(a.col_w_space, Is.EqualTo(b.col_w_space));
 		}
 
 		// Insert some records, return the id of the first
@@ -725,7 +729,73 @@ namespace PetaPoco.Tests
 			Expect(a.id, Is.EqualTo(id));
 		}
 
+		void AssertDynamic(dynamic a, dynamic b)
+		{
+			Expect(a.id, Is.EqualTo(b.id));
+			Expect(a.title, Is.EqualTo(b.title));
+			Expect(a.draft, Is.EqualTo(b.draft));
+			Expect(a.content, Is.EqualTo(b.content));
+			Expect(a.date_created, Is.EqualTo(b.date_created));
+			Expect(a.state, Is.EqualTo(b.state));
+		}
 
+		dynamic CreateExpando()
+		{
+			// Need a rounded date as DB can't store millis
+			var now = DateTime.UtcNow;
+			now = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second);
+
+			// Setup a record
+			dynamic o = new System.Dynamic.ExpandoObject();
+			o.title = string.Format("insert {0}", r.Next());
+			o.draft = true;
+			o.content = string.Format("insert {0}", r.Next());
+			o.date_created = now;
+			o.date_edited = now;
+			o.state = (int)State.Maybe;
+
+			return o;
+		}
+		[Test]
+		public void Dynamic_Query()
+		{
+			// Create a random record
+			var o = CreateExpando();
+
+			Expect(db.IsNew("id", o), Is.True);
+
+			// Insert it
+			db.Insert("petapoco", "id", o);
+			Expect(o.id, Is.Not.EqualTo(0));
+
+			Expect(db.IsNew("id", o), Is.False);
+
+			// Retrieve it
+			var o2 = db.Single<dynamic>("SELECT * FROM petapoco WHERE id=@0", o.id);
+
+			Expect(db.IsNew("id", o2), Is.False);
+
+			// Check it
+			AssertDynamic(o, o2);
+
+			// Update it
+			o2.title = "New Title";
+			db.Save("petapoco", "id", o2);
+
+			// Retrieve itagain
+			var o3 = db.Single<dynamic>("SELECT * FROM petapoco WHERE id=@0", o.id);
+
+			// Check it
+			AssertDynamic(o2, o3);
+
+			// Delete it
+			db.Delete("petapoco", "id", o3);
+
+			// Should be gone!
+			var o4 = db.SingleOrDefault<dynamic>("SELECT * FROM petapoco WHERE id=@0", o.id);
+			Expect(o4==null, Is.True);
+		}
+	
         [Test]
         public void Versioning_InsertSetToOne()
         {
