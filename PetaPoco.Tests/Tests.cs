@@ -87,6 +87,23 @@ namespace PetaPoco.Tests
 			return o;
 		}
 
+        deco_version CreateDecoVersion()
+        {
+            // Need a rounded date as DB can't store millis
+            var now = DateTime.UtcNow;
+            now = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second);
+
+            // Setup a record
+            var o = new deco_version();
+            o.title = string.Format("insert {0}", r.Next());
+            o.content = string.Format("insert {0}", r.Next());
+            o.draft = true;
+            o.date_created = now;
+            o.state = State.Maybe;
+
+            return o;
+        }
+
 		void Assert(poco a, poco b)
 		{
 			Expect(a.id, Is.EqualTo(b.id));
@@ -707,6 +724,46 @@ namespace PetaPoco.Tests
 			Expect(a, Is.Not.Null);
 			Expect(a.id, Is.EqualTo(id));
 		}
+
+
+        [Test]
+        public void Versioning_InsertSetToOne()
+        {
+            var o = CreateDecoVersion();
+            db.Insert(o);
+            var a = db.SingleOrDefault<deco_version>("FROM petapoco WHERE id=@0", o.id);
+            Expect(a, Is.Not.Null);
+            Expect(a.version, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void Versioning_UpdateIncrementVersionColumn()
+        {
+            var o = CreateDecoVersion();
+            db.Insert(o);
+            o.title = "new title";
+            db.Update(o);
+            var b = db.SingleOrDefault<deco_version>("FROM petapoco WHERE id=@0", o.id);
+            Expect(b.version, Is.EqualTo(2));
+            Expect(b.title, Is.EqualTo("new title"));
+        }
+
+        [Test]
+        public void Versioning_NoUpdateIfVersionChangedUnderneath()
+        {
+            var o = CreateDecoVersion();
+            db.Insert(o);
+            o.title = "new title";
+
+            // Update version underneath (usually done by another user)
+            db.Execute("update petapoco set version = version+1 where id=@0", o.id);
+            
+            var rows = db.Update(o);
+            var b = db.SingleOrDefault<deco_version>("FROM petapoco WHERE id=@0", o.id);
+            Expect(rows, Is.EqualTo(0));
+            Expect(b.title, Is.Not.EqualTo("new title"));
+        }
+
 	}
 
 }
