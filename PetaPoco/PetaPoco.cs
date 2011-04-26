@@ -1070,7 +1070,7 @@ namespace PetaPoco
 							if (index > 0)
 								sb.Append(", ");
 
-                            sb.AppendFormat("{0} = {1}{2}", i.Key, _paramPrefix, index++);
+                            sb.AppendFormat("{0} = {1}{2}", EscapeColumnName(i.Key), _paramPrefix, index++);
 
 							// Store the parameter in the command
                             AddParam(cmd, val, _paramPrefix);
@@ -1086,7 +1086,7 @@ namespace PetaPoco
 
                         if (!string.IsNullOrEmpty(versionName))
                         {
-                            cmd.CommandText += string.Format(" AND {0} = {1}{2}", versionName, _paramPrefix, index++);
+                            cmd.CommandText += string.Format(" AND {0} = {1}{2}", EscapeColumnName(versionName), _paramPrefix, index++);
                             AddParam(cmd, versionValue, _paramPrefix);
                         }
 
