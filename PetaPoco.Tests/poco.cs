@@ -30,7 +30,7 @@ namespace PetaPoco.Tests
 
 	// Attributed not-so-true poco
 	[TableName("petapoco")]
-	[PrimaryKey("id", SequenceName="article_id_seq")]
+	[PrimaryKey("id", sequenceName="article_id_seq")]
 	[ExplicitColumns]
 	class deco
 	{
@@ -70,6 +70,14 @@ namespace PetaPoco.Tests
 		public State state { get; set; }
 		[Ignore] public string content { get; set; }
 		[Column("col w space")] public int col_w_space { get; set; }
+	}
+
+	[TableName("petapoco2")]
+	[PrimaryKey("email", autoIncrement=false)]
+	class petapoco2
+	{
+		public string email { get; set; }
+		public string name { get; set; }
 	}
 
     [TableName("petapoco")]

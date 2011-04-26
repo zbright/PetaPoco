@@ -98,19 +98,26 @@ namespace <#=Namespace #>
 	
 
 <#
-foreach(Table tbl in tables)
+foreach(Table tbl in from t in tables where !t.Ignore select t)
 {
 #>
     
 	[TableName("<#=tbl.Name#>")]
-<# if (tbl.PK!=null) { #>
+<# if (tbl.PK!=null && tbl.PK.IsAutoIncrement) { #>
+<# if (tbl.SequenceName==null) { #>
 	[PrimaryKey("<#=tbl.PK.Name#>")]
+<# } else { #>
+	[PrimaryKey("<#=tbl.PK.Name#>", sequenceName="<#=tbl.SequenceName#>")]
+<# } #>
+<# } #>
+<# if (tbl.PK!=null && !tbl.PK.IsAutoIncrement) { #>
+	[PrimaryKey("<#=tbl.PK.Name#>", autoIncrement=false)]
 <# } #>
 	[ExplicitColumns]
     public partial class <#=tbl.ClassName#> <# if (GenerateOperations) { #>: <#=RepoName#>.Record<<#=tbl.ClassName#>> <# } #> 
     {
 <#
-foreach(Column col in tbl.Columns)
+foreach(Column col in from c in tbl.Columns where !c.Ignore select c)
 {
 		// Column bindings
 #>
