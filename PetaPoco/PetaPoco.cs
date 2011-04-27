@@ -1085,7 +1085,7 @@ namespace PetaPoco
 
                         if (!string.IsNullOrEmpty(versionName))
                         {
-                            cmd.CommandText += string.Format(" AND {0} = {1}{2}", EscapeColumnName(versionName), _paramPrefix, index++);
+                            cmd.CommandText += string.Format(" AND {0} = {1}{2}", EscapeSqlIdentifier(versionName), _paramPrefix, index++);
                             AddParam(cmd, versionValue, _paramPrefix);
                         }
 
