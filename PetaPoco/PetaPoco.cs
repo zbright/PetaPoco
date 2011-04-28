@@ -1576,7 +1576,7 @@ namespace PetaPoco
 #endif
 						if (typeof(T).IsValueType || typeof(T)==typeof(string) || typeof(T)==typeof(byte[]))
 						{
-							return (rdr) => (T)rdr.GetValue(0);
+						    return (rdr) => (T)(rdr.IsDBNull(0) ? null : rdr.GetValue(0));
 						}
 						else
 						{
