@@ -1576,7 +1576,15 @@ namespace PetaPoco
 #endif
 						if (typeof(T).IsValueType || typeof(T)==typeof(string) || typeof(T)==typeof(byte[]))
 						{
-						    return (rdr) => (T)(rdr.IsDBNull(0) ? null : rdr.GetValue(0));
+						    return (rdr) =>
+						    {
+						        Func<object, object> converter = null;
+						        if (ForceDateTimesToUtc && rdr.GetFieldType(0) == typeof (DateTime) && (typeof (T) == typeof (DateTime) || typeof (T) == typeof (DateTime?)))
+						        {
+						            converter = src => { return new DateTime(((DateTime) src).Ticks, DateTimeKind.Utc); };
+						        }
+						        return (T) (rdr.IsDBNull(0) ? null : (converter != null ? converter(rdr.GetValue(0)) : rdr.GetValue(0)));
+						    };
 						}
 						else
 						{
