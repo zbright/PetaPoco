@@ -283,7 +283,6 @@ namespace PetaPoco
 			// Automatically close one open connection reference
 			//  (Works with KeepConnectionAlive and manually opening a shared connection)
 			CloseSharedConnection();
-            }
         }
 
 		// Set to true to keep the first opened connection alive until this object is disposed
