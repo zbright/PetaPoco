@@ -1349,11 +1349,12 @@ namespace PetaPoco
             sb.Append(sql);
             if (args != null && args.Length > 0)
             {
-                sb.Append("\r\n\r\n");
+                sb.Append("\n");
                 for (int i = 0; i < args.Length; i++)
                 {
-                    sb.AppendFormat("{0}{1} [{2}] = \"{3}\"\r\n", _paramPrefix, i, args[i].GetType().Name, args[i]);
+                    sb.AppendFormat("\t -> {0}{1} [{2}] = \"{3}\"\n", _paramPrefix, i, args[i].GetType().Name, args[i]);
                 }
+                sb.Remove(sb.Length - 1, 1);
             }
             return sb.ToString();
         }
