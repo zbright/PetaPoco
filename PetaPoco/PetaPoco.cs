@@ -280,10 +280,13 @@ namespace PetaPoco
 	    // Automatically close one open shared connection
 		public void Dispose()
 		{
-			if (_sharedConnectionDepth > 0) {
-				CloseSharedConnection();
-            }
+			// Automatically close one open connection reference
+			//  (Works with KeepConnectionAlive and manually opening a shared connection)
+			CloseSharedConnection();
         }
+
+		// Set to true to keep the first opened connection alive until this object is disposed
+		public bool KeepConnectionAlive { get; set; }
 
 		// Open a connection (can be nested)
         public void OpenSharedConnection()
@@ -293,18 +296,24 @@ namespace PetaPoco
 				_sharedConnection = _factory.CreateConnection();
 				_sharedConnection.ConnectionString = _connectionString;
 				_sharedConnection.Open();
-		    }
+
+				if (KeepConnectionAlive)
+					_sharedConnectionDepth++;		// Make sure you call Dispose
+			}
 			_sharedConnectionDepth++;
 		}
 
 		// Close a previously opened connection
         public void CloseSharedConnection()
 		{
-			_sharedConnectionDepth--;
-			if (_sharedConnectionDepth == 0)
+			if (_sharedConnectionDepth > 0)
 			{
-				_sharedConnection.Dispose();
-				_sharedConnection = null;
+				_sharedConnectionDepth--;
+				if (_sharedConnectionDepth == 0)
+				{
+					_sharedConnection.Dispose();
+					_sharedConnection = null;
+				}
 		    }
 		}
 
