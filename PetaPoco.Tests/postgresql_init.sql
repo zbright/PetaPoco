@@ -10,6 +10,7 @@ CREATE TABLE petapoco (
 	content			text NOT NULL,
 	state			int NOT NULL,
 	"col w space"   int,
+	nullreal		real NULL,
 	version			int,
 
 	PRIMARY KEY (id)
