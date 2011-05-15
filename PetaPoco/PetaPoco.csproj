@@ -64,6 +64,7 @@
   <ItemGroup>
     <Compile Include="Models\Generated\Database.cs" />
     <Compile Include="PetaPoco.cs" />
+    <Compile Include="PetaPocoMappings.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

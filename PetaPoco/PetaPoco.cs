@@ -1385,6 +1385,12 @@ namespace PetaPoco
 			set;
 		}
 
+        public static PetaPoco.FluentConfiguration.PetaPocoMappings Mappings
+        {
+            get;
+            set;
+        }
+
 		public class PocoColumn
 		{
 			public string ColumnName;
@@ -1442,7 +1448,7 @@ namespace PetaPoco
                     PocoData pd;
                     if (!m_PocoDatas.TryGetValue(t, out pd))
                     {
-                        pd = new PocoData(t);
+                        pd = Mappings != null && Mappings.Config.ContainsKey(t) ? new PocoData(Mappings) : new PocoData(t);
                         m_PocoDatas.Add(t, pd);
                     }
                     return pd;
@@ -1520,6 +1526,84 @@ namespace PetaPoco
 				QueryColumns = (from c in Columns where !c.Value.ResultColumn select c.Key).ToArray();
 
             }
+
+            public PocoData(PetaPoco.FluentConfiguration.PetaPocoMappings pocoMappings)
+            {
+                foreach (var configType in pocoMappings.Config)
+                {
+                    TableInfo = new TableInfo();
+
+                    // Get the table name
+                    var a = configType.Value.TableName ?? "";
+                    TableInfo.TableName = a.Length == 0 ? configType.Key.Name : a;
+
+                    // Get the primary key
+                    a = configType.Value.PrimaryKey ?? "";
+                    TableInfo.PrimaryKey = a.Length == 0 ? "ID" : a;
+
+                    a = configType.Value.SequenceName ?? "";
+                    TableInfo.SequenceName = a.Length == 0 ? null : a;
+
+                    TableInfo.AutoIncrement = configType.Value.AutoIncrement;
+
+                    // Set autoincrement false if primary key has multiple columns
+                    TableInfo.AutoIncrement = TableInfo.AutoIncrement ? !TableInfo.PrimaryKey.Contains(',') : TableInfo.AutoIncrement;
+
+                    // Call column mapper
+                    if (Database.Mapper != null)
+                        Database.Mapper.GetTableInfo(configType.Key, TableInfo);
+
+                    // Work out bound properties
+                    bool ExplicitColumns = configType.Value.ExplicitColumns;
+                    var Columns = new Dictionary<string, PocoColumn>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var pi in configType.Key.GetProperties())
+                    {
+                        // Work out if properties is to be included
+                        var isColumnDefined = configType.Value.ColumnConfiguration.ContainsKey(pi.Name);
+                        if (ExplicitColumns)
+                        {
+                            if (!isColumnDefined)
+                                continue;
+                        }
+                        else
+                        {
+                            if (isColumnDefined && configType.Value.ColumnConfiguration[pi.Name].IgnoreColumn)
+                                continue;
+                        }
+
+                        var pc = new PocoColumn();
+                        pc.PropertyInfo = pi;
+
+                        // Work out the DB column name
+                        if (isColumnDefined)
+                        {
+                            var colattr = configType.Value.ColumnConfiguration[pi.Name];
+                            pc.ColumnName = colattr.DbColumnName;
+                            if (colattr.ResultColumn)
+                                pc.ResultColumn = true;
+                            else if (colattr.VersionColumn)
+                                pc.VersionColumn = true;
+
+                            // Support for composite keys needed
+                            if (pi.Name == TableInfo.PrimaryKey)
+                                TableInfo.PrimaryKey = pc.ColumnName;
+
+                        }
+                        if (pc.ColumnName == null)
+                        {
+                            pc.ColumnName = pi.Name;
+                            if (Database.Mapper != null && !Database.Mapper.MapPropertyToColumn(pi, ref pc.ColumnName, ref pc.ResultColumn))
+                                continue;
+                        }
+
+                        // Store it
+                        Columns.Add(pc.ColumnName, pc);
+                    }
+
+                    // Build column list for automatic select
+                    QueryColumns = (from c in Columns where !c.Value.ResultColumn select c.Key).ToArray();
+                }
+            }   
 
             bool IsIntegralType(Type t)
             {
