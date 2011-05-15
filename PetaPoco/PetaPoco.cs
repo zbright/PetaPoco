@@ -1017,8 +1017,6 @@ namespace PetaPoco
 								break;
 						}
 
-                        OnExecutedCommand(cmd);
-
 					    // Assign the ID back to the primary key property
                         if (primaryKeyName != null)
 						{
@@ -1555,7 +1553,7 @@ namespace PetaPoco
 
                     // Work out bound properties
                     bool ExplicitColumns = configType.Value.ExplicitColumns;
-                    var Columns = new Dictionary<string, PocoColumn>(StringComparer.OrdinalIgnoreCase);
+                    Columns = new Dictionary<string, PocoColumn>(StringComparer.OrdinalIgnoreCase);
                     foreach (var pi in configType.Key.GetProperties())
                     {
                         // Work out if properties is to be included
