@@ -96,15 +96,16 @@ namespace PetaPoco.FluentConfiguration
     {
         private readonly PetaPocoTypeDefinition _petaPocoTypeDefinition;
 
-        public PetaPocoMap()
+        public PetaPocoMap() : this(new PetaPocoTypeDefinition())
         {
-            _petaPocoTypeDefinition = new PetaPocoTypeDefinition {Type = typeof (T)};
         }
 
         public PetaPocoMap(PetaPocoTypeDefinition petaPocoTypeDefinition)
         {
             _petaPocoTypeDefinition = petaPocoTypeDefinition;
             _petaPocoTypeDefinition.Type = typeof (T);
+            _petaPocoTypeDefinition.AutoIncrement = true;
+            _petaPocoTypeDefinition.ColumnConfiguration = new Dictionary<string, PetaPocoColumnDefinition>();
         }
 
         public PetaPocoMap<T> TableName(string tableName)
@@ -121,10 +122,7 @@ namespace PetaPoco.FluentConfiguration
         public PetaPocoMap<T> Columns(Action<PetaPocoColumnConfiguration<T>> columnConfiguration, bool explicitColumns)
         {
             _petaPocoTypeDefinition.ExplicitColumns = explicitColumns;
-            _petaPocoTypeDefinition.ColumnConfiguration = new Dictionary<string, PetaPocoColumnDefinition>();
-
-            var petaColumnConfiguration = new PetaPocoColumnConfiguration<T>(_petaPocoTypeDefinition.ColumnConfiguration);
-            columnConfiguration(petaColumnConfiguration);
+            columnConfiguration(new PetaPocoColumnConfiguration<T>(_petaPocoTypeDefinition.ColumnConfiguration));
             return this;
         }
 
