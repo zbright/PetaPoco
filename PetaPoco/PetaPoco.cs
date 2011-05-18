@@ -1701,7 +1701,7 @@ namespace PetaPoco
 											il.Emit(OpCodes.Newobj, dstType.GetConstructor(new Type[] { Nullable.GetUnderlyingType(dstType) }));
 										}
 
-										il.Emit(OpCodes.Callvirt, pc.PropertyInfo.GetSetMethod());		// poco
+										il.Emit(OpCodes.Callvirt, pc.PropertyInfo.GetSetMethod(true));		// poco
 										Handled = true;
 									}
 								}
@@ -1734,7 +1734,7 @@ namespace PetaPoco
 
 									// Assign it
 									il.Emit(OpCodes.Unbox_Any, pc.PropertyInfo.PropertyType);		// poco,poco,value
-									il.Emit(OpCodes.Callvirt, pc.PropertyInfo.GetSetMethod());		// poco
+									il.Emit(OpCodes.Callvirt, pc.PropertyInfo.GetSetMethod(true));		// poco
 								}
 
 								il.MarkLabel(lblNext);
