@@ -450,14 +450,22 @@ namespace PetaPoco
 		// Add a parameter to a DB command
 		void AddParam(IDbCommand cmd, object item, string ParameterPrefix)
 		{
-			// Convert value to from poco type to db type
+		    var idbParam = item as IDbDataParameter;
+            if (idbParam != null)
+            {
+                idbParam.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
+                cmd.Parameters.Add(idbParam);
+                return;
+            }
+
+		    // Convert value to from poco type to db type
 			if (Database.Mapper != null && item!=null)
 			{
 				var fn = Database.Mapper.GetToDbConverter(item.GetType());
 				if (fn!=null)
 					item = fn(item);
 			}
-			
+
 			var p = cmd.CreateParameter();
             p.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
 
