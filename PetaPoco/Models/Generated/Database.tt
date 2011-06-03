@@ -5,9 +5,12 @@
     Namespace = "";
     RepoName = "";
     GenerateOperations = true;
+	ClassPrefix = "";
+	ClassSuffix = "";
 
     // Read schema
 	var tables = LoadTables();
+
 
 /*
 	// Tweak Schema
