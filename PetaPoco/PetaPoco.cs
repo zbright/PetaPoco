@@ -132,19 +132,6 @@ namespace PetaPoco
 		Func<object, object> GetToDbConverter(Type SourceType);
 	}
 
-    public class DestinationInfo
-    {
-        public DestinationInfo() {}
-        public DestinationInfo(PropertyInfo propertyInfo)
-        {
-            PropertyInfo = propertyInfo;
-            Type = propertyInfo.PropertyType;
-        }
-
-        public PropertyInfo PropertyInfo { get; set; }
-        public Type Type { get; set; }
-    }
-
     public class DefaultMapper : IMapper
     {
         public virtual void GetTableInfo(Type t, TableInfo ti) { }
@@ -160,6 +147,23 @@ namespace PetaPoco
         {
             return null;
         }
+    }
+
+    public class DestinationInfo
+    {
+        public DestinationInfo(Type type)
+        {
+            Type = type;
+        }
+
+        public DestinationInfo(PropertyInfo propertyInfo)
+        {
+            PropertyInfo = propertyInfo;
+            Type = propertyInfo.PropertyType;
+        }
+
+        public PropertyInfo PropertyInfo { get; private set; }
+        public Type Type { get; private set; }
     }
 
     public interface IDatabaseQuery
@@ -195,6 +199,7 @@ namespace PetaPoco
         IEnumerable<T1> Query<T1, T2>(string sql, params object[] args);
         IEnumerable<T1> Query<T1, T2, T3>(string sql, params object[] args);
         IEnumerable<T1> Query<T1, T2, T3, T4>(string sql, params object[] args);
+        IEnumerable<TRet> Query<TRet>(Type[] types, object cb, string sql, params object[] args);
         List<T1> Fetch<T1, T2>(Sql sql);
         List<T1> Fetch<T1, T2, T3>(Sql sql);
         List<T1> Fetch<T1, T2, T3, T4>(Sql sql);
@@ -247,6 +252,8 @@ namespace PetaPoco
     // Database class ... this is where most of the action happens
     public class Database : IDisposable, IDatabase
     {
+        public const string MsSqlClientProvider = "System.Data.SqlClient";
+
 		public Database(IDbConnection connection)
 		{
 			_sharedConnection = connection;
@@ -2182,7 +2189,7 @@ namespace PetaPoco
                 {
                     DestinationInfo destinationInfo = pc != null
                                                           ? new DestinationInfo(pc.PropertyInfo)
-                                                          : new DestinationInfo {Type = dstType};
+                                                          : new DestinationInfo(dstType);
                     converter = Database.Mapper.GetFromDbConverter(destinationInfo, srcType);
                 }
 
