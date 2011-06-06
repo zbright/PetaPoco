@@ -1,4 +1,4 @@
-﻿/* PetaPoco v4.0.2 - A Tiny ORMish thing for your POCO's.
+/* PetaPoco v4.0.2 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -2035,14 +2035,7 @@ namespace PetaPoco
 						}
 						else
 #endif
-						if (type.IsValueType)
-						{
-							il.Emit(OpCodes.Ldarg_0);										// rdr
-							il.Emit(OpCodes.Ldc_I4_0);										// rdr,0
-							il.Emit(OpCodes.Callvirt, fnGetValue);							// value
-							il.Emit(OpCodes.Unbox_Any, type);								// value converted
-						}
-						else if (type == typeof(string) || type == typeof(byte[]))
+						if (type.IsValueType || type == typeof(string) || type == typeof(byte[]))
 						{
 							// "if (!rdr.IsDBNull(i))"
 							il.Emit(OpCodes.Ldarg_0);										// rdr
@@ -2059,9 +2052,8 @@ namespace PetaPoco
 							il.Emit(OpCodes.Ldc_I4_0);										// rdr,0
 							il.Emit(OpCodes.Callvirt, fnGetValue);							// value
 
-							il.Emit(OpCodes.Unbox_Any, type);								// value converted
-
 							il.MarkLabel(lblFin);
+							il.Emit(OpCodes.Unbox_Any, type);								// value converted
 						}
 						else
 						{
