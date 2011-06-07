@@ -1,4 +1,4 @@
-﻿/* PetaPoco v4.0.2 - A Tiny ORMish thing for your POCO's.
+/* PetaPoco v4.0.2 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -307,6 +307,7 @@ namespace PetaPoco
 			MySql,
 			PostgreSQL,
 			Oracle,
+            SQLite
 		}
 		DBType _dbType = DBType.SqlServer;
 
@@ -325,6 +326,7 @@ namespace PetaPoco
 			else if (dbtype.StartsWith("SqlCe"))	_dbType = DBType.SqlServerCE;
 			else if (dbtype.StartsWith("Npgsql"))	_dbType = DBType.PostgreSQL;
 			else if (dbtype.StartsWith("Oracle"))	_dbType = DBType.Oracle;
+            else if (dbtype.StartsWith("SQLite")) _dbType = DBType.SQLite;
 
 			if (_dbType == DBType.MySql && _connectionString != null && _connectionString.IndexOf("Allow User Variables=true") >= 0)
 				_paramPrefix = "?";
@@ -1393,6 +1395,21 @@ namespace PetaPoco
 								}
 								OnExecutedCommand(cmd);
 								break;
+                            case DBType.SQLite:
+                                if (primaryKeyName != null)
+                                {
+                                    cmd.CommandText += ";\nSELECT last_insert_rowid();";
+                                    DoPreExecute(cmd);
+                                    id = cmd.ExecuteScalar();
+                                }
+                                else
+                                {
+                                    id = -1;
+                                    DoPreExecute(cmd);
+                                    cmd.ExecuteNonQuery();
+                                }
+                                OnExecutedCommand(cmd);
+                                break;
 							default:
 								cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
 								DoPreExecute(cmd);
@@ -1400,8 +1417,6 @@ namespace PetaPoco
 								OnExecutedCommand(cmd);
 								break;
 						}
-
-                        OnExecutedCommand(cmd);
 
 					    // Assign the ID back to the primary key property
                         if (primaryKeyName != null)
