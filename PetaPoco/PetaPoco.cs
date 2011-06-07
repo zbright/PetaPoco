@@ -1,4 +1,4 @@
-﻿/* PetaPoco v3.0.1 - A Tiny ORMish thing for your POCO's.
+﻿/* PetaPoco v4.0.2 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -21,6 +21,8 @@ using System.Data;
 using System.Text.RegularExpressions;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Linq.Expressions;
+
 
 namespace PetaPoco
 {
@@ -79,6 +81,12 @@ namespace PetaPoco
 	}
 
     [AttributeUsage(AttributeTargets.Property)]
+	public class AutoJoinAttribute : Attribute
+	{
+		public AutoJoinAttribute() { }
+	}
+
+    [AttributeUsage(AttributeTargets.Property)]
     public class VersionColumnAttribute : ColumnAttribute
     {
         public VersionColumnAttribute() {}
@@ -93,6 +101,7 @@ namespace PetaPoco
 		public long TotalItems { get; set; }
 		public long ItemsPerPage { get; set; }
 		public List<T> Items { get; set; }
+		public object Context { get; set; }
 	}
 
 	// Pass as parameter value to force to DBType.AnsiString
@@ -119,7 +128,7 @@ namespace PetaPoco
 	{
 		void GetTableInfo(Type t, TableInfo ti);
 		bool MapPropertyToColumn(PropertyInfo pi, ref string columnName, ref bool resultColumn);
-		Func<object, object> GetFromDbConverter(PropertyInfo pi, Type SourceType);
+        Func<object, object> GetFromDbConverter(DestinationInfo destinationInfo, Type SourceType);
 		Func<object, object> GetToDbConverter(Type SourceType);
 	}
 
@@ -130,7 +139,7 @@ namespace PetaPoco
         {
             return true;
         }
-        public virtual Func<object, object> GetFromDbConverter(PropertyInfo pi, Type SourceType)
+        public virtual Func<object, object> GetFromDbConverter(DestinationInfo destinationInfo, Type SourceType)
         {
             return null;
         }
@@ -138,6 +147,23 @@ namespace PetaPoco
         {
             return null;
         }
+    }
+
+    public class DestinationInfo
+    {
+        public DestinationInfo(Type type)
+        {
+            Type = type;
+        }
+
+        public DestinationInfo(PropertyInfo propertyInfo)
+        {
+            PropertyInfo = propertyInfo;
+            Type = propertyInfo.PropertyType;
+        }
+
+        public PropertyInfo PropertyInfo { get; private set; }
+        public Type Type { get; private set; }
     }
 
     public interface IDatabaseQuery
@@ -155,6 +181,31 @@ namespace PetaPoco
         List<T> Fetch<T>(long page, long itemsPerPage, Sql sql);
         Page<T> Page<T>(long page, long itemsPerPage, string sql, params object[] args);
         Page<T> Page<T>(long page, long itemsPerPage, Sql sql);
+        List<TRet> Fetch<T1, T2, TRet>(Func<T1, T2, TRet> cb, string sql, params object[] args);
+        List<TRet> Fetch<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, string sql, params object[] args);
+        List<TRet> Fetch<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, string sql, params object[] args);
+        IEnumerable<TRet> Query<T1, T2, TRet>(Func<T1, T2, TRet> cb, string sql, params object[] args);
+        IEnumerable<TRet> Query<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, string sql, params object[] args);
+        IEnumerable<TRet> Query<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, string sql, params object[] args);
+        List<TRet> Fetch<T1, T2, TRet>(Func<T1, T2, TRet> cb, Sql sql);
+        List<TRet> Fetch<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, Sql sql);
+        List<TRet> Fetch<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, Sql sql);
+        IEnumerable<TRet> Query<T1, T2, TRet>(Func<T1, T2, TRet> cb, Sql sql);
+        IEnumerable<TRet> Query<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, Sql sql);
+        IEnumerable<TRet> Query<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, Sql sql);
+        List<T1> Fetch<T1, T2>(string sql, params object[] args);
+        List<T1> Fetch<T1, T2, T3>(string sql, params object[] args);
+        List<T1> Fetch<T1, T2, T3, T4>(string sql, params object[] args);
+        IEnumerable<T1> Query<T1, T2>(string sql, params object[] args);
+        IEnumerable<T1> Query<T1, T2, T3>(string sql, params object[] args);
+        IEnumerable<T1> Query<T1, T2, T3, T4>(string sql, params object[] args);
+        IEnumerable<TRet> Query<TRet>(Type[] types, object cb, string sql, params object[] args);
+        List<T1> Fetch<T1, T2>(Sql sql);
+        List<T1> Fetch<T1, T2, T3>(Sql sql);
+        List<T1> Fetch<T1, T2, T3, T4>(Sql sql);
+        IEnumerable<T1> Query<T1, T2>(Sql sql);
+        IEnumerable<T1> Query<T1, T2, T3>(Sql sql);
+        IEnumerable<T1> Query<T1, T2, T3, T4>(Sql sql);
         IEnumerable<T> Query<T>(string sql, params object[] args);
         IEnumerable<T> Query<T>(Sql sql);
         T Single<T>(object primaryKey);
@@ -168,16 +219,18 @@ namespace PetaPoco
         T First<T>(Sql sql);
         T FirstOrDefault<T>(Sql sql);
         bool Exists<T>(object primaryKey);
+        int OneTimeCommandTimeout { get; set; }
     }
 
     public interface IDatabase : IDatabaseQuery
     {
         void Dispose();
         IDbConnection Connection { get; }
-        Transaction Transaction { get; }
+        Transaction GetTransaction();
         void BeginTransaction();
         void AbortTransaction();
         void CompleteTransaction();
+        object Insert(string tableName, string primaryKeyName, bool autoIncrement, object poco);
         object Insert(string tableName, string primaryKeyName, object poco);
         object Insert(object poco);
         int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue);
@@ -199,6 +252,8 @@ namespace PetaPoco
     // Database class ... this is where most of the action happens
     public class Database : IDisposable, IDatabase
     {
+        public const string MsSqlClientProvider = "System.Data.SqlClient";
+
 		public Database(IDbConnection connection)
 		{
 			_sharedConnection = connection;
@@ -252,6 +307,7 @@ namespace PetaPoco
 			MySql,
 			PostgreSQL,
 			Oracle,
+            SQLite
 		}
 		DBType _dbType = DBType.SqlServer;
 
@@ -270,6 +326,7 @@ namespace PetaPoco
 			else if (dbtype.StartsWith("SqlCe"))	_dbType = DBType.SqlServerCE;
 			else if (dbtype.StartsWith("Npgsql"))	_dbType = DBType.PostgreSQL;
 			else if (dbtype.StartsWith("Oracle"))	_dbType = DBType.Oracle;
+            else if (dbtype.StartsWith("SQLite")) _dbType = DBType.SQLite;
 
 			if (_dbType == DBType.MySql && _connectionString != null && _connectionString.IndexOf("Allow User Variables=true") >= 0)
 				_paramPrefix = "?";
@@ -321,12 +378,6 @@ namespace PetaPoco
 		public IDbConnection Connection
 		{
 			get { return _sharedConnection; }
-		}
-
-		[Obsolete("Transaction property has been replaced by GetTransaction() method")]
-		public Transaction Transaction
-		{
-			get { return GetTransaction(); }
 		}
 
 		// Helper to create a transaction scope
@@ -458,6 +509,14 @@ namespace PetaPoco
 					item = fn(item);
 			}
 			
+			// Support passed in parameters
+			var idbParam = item as IDbDataParameter;
+			if (idbParam != null)
+			{
+				idbParam.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
+				cmd.Parameters.Add(idbParam);
+				return;
+			}
 			var p = cmd.CreateParameter();
             p.ParameterName = string.Format("{0}{1}", ParameterPrefix, cmd.Parameters.Count);
 
@@ -467,31 +526,43 @@ namespace PetaPoco
 			}
 			else
 			{
-				if (item.GetType().IsEnum)		// PostgreSQL .NET driver wont cast enum to int
+				var t = item.GetType();
+				if (t.IsEnum)		// PostgreSQL .NET driver wont cast enum to int
 				{
 					p.Value = (int)item;
 				}
-				else if (item.GetType() == typeof(Guid))
+				else if (t == typeof(Guid))
 				{
 					p.Value = item.ToString();
 					p.DbType = DbType.String;
-					p.Size = 4000;
+					p.Size = 40;
 				}
-				else if (item.GetType() == typeof(string))
+				else if (t == typeof(string))
 				{
 					p.Size = Math.Max((item as string).Length + 1, 4000);		// Help query plan caching by using common size
                     p.Value = item;
 				}
-				else if (item.GetType() == typeof(AnsiString))
+				else if (t == typeof(AnsiString))
 				{
 					// Thanks @DataChomp for pointing out the SQL Server indexing performance hit of using wrong string type on varchar
 					p.Size = Math.Max((item as AnsiString).Value.Length + 1, 4000);
 					p.Value = (item as AnsiString).Value;
 					p.DbType = DbType.AnsiString;
 				}
-				else if (item.GetType() == typeof(bool) && _dbType != DBType.PostgreSQL)
+				else if (t == typeof(bool) && _dbType != DBType.PostgreSQL)
 				{
 					p.Value = ((bool)item) ? 1 : 0;
+				}
+				else if (item.GetType().Name == "SqlGeography") //SqlGeography is a CLR Type
+				{
+					p.GetType().GetProperty("UdtTypeName").SetValue(p, "geography", null); //geography is the equivalent SQL Server Type
+					p.Value = item;
+				}
+
+				else if (item.GetType().Name == "SqlGeometry") //SqlGeometry is a CLR Type
+				{
+					p.GetType().GetProperty("UdtTypeName").SetValue(p, "geometry", null); //geography is the equivalent SQL Server Type
+					p.Value = item;
 				}
 				else
 				{
@@ -622,6 +693,9 @@ namespace PetaPoco
 		Regex rxFrom = new Regex(@"\A\s*FROM\s", RegexOptions.Compiled | RegexOptions.Singleline | RegexOptions.IgnoreCase | RegexOptions.Multiline);
         string AddSelectClause<T>(string sql)
         {
+			if (sql.StartsWith(";"))
+				return sql.Substring(1);
+
             if (!rxSelect.IsMatch(sql))
             {
                 var pd = PocoData.ForType(typeof(T));
@@ -738,6 +812,9 @@ namespace PetaPoco
 			string sqlCount, sqlPage;
 			BuildPageQueries<T>(page, itemsPerPage, sql, ref args, out sqlCount, out sqlPage);
 
+			// Save the one-time command time out and use it for both queries
+			int saveTimeout = OneTimeCommandTimeout;
+
 			// Setup the paged result
 			var result = new Page<T>();
 			result.CurrentPage = page;
@@ -746,6 +823,8 @@ namespace PetaPoco
 			result.TotalPages = result.TotalItems / itemsPerPage;
 			if ((result.TotalItems % itemsPerPage) != 0)
 				result.TotalPages++;
+
+			OneTimeCommandTimeout = saveTimeout;
 
 			// Get the records
 			result.Items = Fetch<T>(sqlPage, args);
@@ -787,9 +866,10 @@ namespace PetaPoco
                         OnException(x);
                         throw;
                     }
+					
                     using (r)
                     {
-                        var factory = pd.GetFactory<T>(cmd.CommandText + "-" + _sharedConnection.ConnectionString + ForceDateTimesToUtc.ToString(), ForceDateTimesToUtc, r);
+                        var factory = pd.GetFactory(cmd.CommandText, _sharedConnection.ConnectionString, ForceDateTimesToUtc, 0, r.FieldCount, r) as Func<IDataReader, T>;
                         while (true)
                         {
                             T poco;
@@ -814,6 +894,312 @@ namespace PetaPoco
             {
                 CloseSharedConnection();
             }
+		}
+
+		// Multi Fetch
+		public List<TRet> Fetch<T1, T2, TRet>(Func<T1, T2, TRet> cb, string sql, params object[] args) { return Query<T1, T2, TRet>(cb, sql, args).ToList(); }
+		public List<TRet> Fetch<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, string sql, params object[] args) { return Query<T1, T2, T3, TRet>(cb, sql, args).ToList(); }
+		public List<TRet> Fetch<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, string sql, params object[] args) { return Query<T1, T2, T3, T4, TRet>(cb, sql, args).ToList(); }
+
+		// Multi Query
+		public IEnumerable<TRet> Query<T1, T2, TRet>(Func<T1, T2, TRet> cb, string sql, params object[] args) { return Query<TRet>(new Type[] { typeof(T1), typeof(T2) }, cb, sql, args); }
+		public IEnumerable<TRet> Query<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, string sql, params object[] args) { return Query<TRet>(new Type[] { typeof(T1), typeof(T2), typeof(T3)}, cb, sql, args); }
+		public IEnumerable<TRet> Query<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, string sql, params object[] args) { return Query<TRet>(new Type[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4)}, cb, sql, args); }
+
+		// Multi Fetch (SQL builder)
+		public List<TRet> Fetch<T1, T2, TRet>(Func<T1, T2, TRet> cb, Sql sql) { return Query<T1, T2, TRet>(cb, sql.SQL, sql.Arguments).ToList(); }
+		public List<TRet> Fetch<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, Sql sql) { return Query<T1, T2, T3, TRet>(cb, sql.SQL, sql.Arguments).ToList(); }
+		public List<TRet> Fetch<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, Sql sql) { return Query<T1, T2, T3, T4, TRet>(cb, sql.SQL, sql.Arguments).ToList(); }
+
+		// Multi Query (SQL builder)
+		public IEnumerable<TRet> Query<T1, T2, TRet>(Func<T1, T2, TRet> cb, Sql sql) { return Query<TRet>(new Type[] { typeof(T1), typeof(T2) }, cb, sql.SQL, sql.Arguments); }
+		public IEnumerable<TRet> Query<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, Sql sql) { return Query<TRet>(new Type[] { typeof(T1), typeof(T2), typeof(T3) }, cb, sql.SQL, sql.Arguments); }
+		public IEnumerable<TRet> Query<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, Sql sql) { return Query<TRet>(new Type[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, cb, sql.SQL, sql.Arguments); }
+
+		// Multi Fetch (Simple)
+		public List<T1> Fetch<T1, T2>(string sql, params object[] args) { return Query<T1, T2>(sql, args).ToList(); }
+		public List<T1> Fetch<T1, T2, T3>(string sql, params object[] args) { return Query<T1, T2, T3>(sql, args).ToList(); }
+		public List<T1> Fetch<T1, T2, T3, T4>(string sql, params object[] args) { return Query<T1, T2, T3, T4>(sql, args).ToList(); }
+
+		// Multi Query (Simple)
+		public IEnumerable<T1> Query<T1, T2>(string sql, params object[] args) { return Query<T1>(new Type[] { typeof(T1), typeof(T2) }, null, sql, args); }
+		public IEnumerable<T1> Query<T1, T2, T3>(string sql, params object[] args) { return Query<T1>(new Type[] { typeof(T1), typeof(T2), typeof(T3) }, null, sql, args); }
+		public IEnumerable<T1> Query<T1, T2, T3, T4>(string sql, params object[] args) { return Query<T1>(new Type[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, null, sql, args); }
+
+		// Multi Fetch (Simple) (SQL builder)
+		public List<T1> Fetch<T1, T2>(Sql sql) { return Query<T1, T2>(sql.SQL, sql.Arguments).ToList(); }
+		public List<T1> Fetch<T1, T2, T3>(Sql sql) { return Query<T1, T2, T3>(sql.SQL, sql.Arguments).ToList(); }
+		public List<T1> Fetch<T1, T2, T3, T4>(Sql sql) { return Query<T1, T2, T3, T4>(sql.SQL, sql.Arguments).ToList(); }
+
+		// Multi Query (Simple) (SQL builder)
+		public IEnumerable<T1> Query<T1, T2>(Sql sql) { return Query<T1>(new Type[] { typeof(T1), typeof(T2) }, null, sql.SQL, sql.Arguments); }
+		public IEnumerable<T1> Query<T1, T2, T3>(Sql sql) { return Query<T1>(new Type[] { typeof(T1), typeof(T2), typeof(T3) }, null, sql.SQL, sql.Arguments); }
+		public IEnumerable<T1> Query<T1, T2, T3, T4>(Sql sql) { return Query<T1>(new Type[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, null, sql.SQL, sql.Arguments); }
+
+		// Automagically guess the property relationships between various POCOs and create a delegate that will set them up
+		object GetAutoMapper(Type[] types)
+		{
+			// Build a key
+			var kb = new StringBuilder();
+			foreach (var t in types)
+			{
+				kb.Append(t.ToString());
+				kb.Append(":");
+			}
+			var key = kb.ToString();
+
+			// Check cache
+			RWLock.EnterReadLock();
+			try
+			{
+				object mapper;
+				if (AutoMappers.TryGetValue(key, out mapper))
+					return mapper;
+			}
+			finally
+			{
+				RWLock.ExitReadLock();
+			}
+
+			// Create it
+			RWLock.EnterWriteLock();
+			try
+			{
+				// Try again
+				object mapper;
+				if (AutoMappers.TryGetValue(key, out mapper))
+					return mapper;
+
+				// Create a method
+				var m = new DynamicMethod("petapoco_automapper", types[0], types, true);
+				var il = m.GetILGenerator();
+
+				for (int i = 1; i < types.Length; i++)
+				{
+					bool handled = false;
+					for (int j = i - 1; j >= 0; j--)
+					{
+						// Find the property
+						var candidates = from p in types[j].GetProperties() where p.PropertyType == types[i] select p;
+						if (candidates.Count() == 0)
+							continue;
+						if (candidates.Count() > 1)
+							throw new InvalidOperationException(string.Format("Can't auto join {0} as {1} has more than one property of type {0}", types[i], types[j]));
+
+						// Generate code
+						il.Emit(OpCodes.Ldarg_S, j);
+						il.Emit(OpCodes.Ldarg_S, i);
+						il.Emit(OpCodes.Callvirt, candidates.First().GetSetMethod(true));
+						handled = true;
+					}
+
+					if (!handled)
+						throw new InvalidOperationException(string.Format("Can't auto join {0}", types[i]));
+				}
+
+				il.Emit(OpCodes.Ldarg_0);
+				il.Emit(OpCodes.Ret);
+
+				// Cache it
+				var del = m.CreateDelegate(Expression.GetFuncType(types.Concat(types.Take(1)).ToArray()));
+				AutoMappers.Add(key, del);
+				return del;
+			}
+			finally
+			{
+				RWLock.ExitWriteLock();
+			}
+		}
+
+		// Find the split point in a result set for two different pocos and return the poco factory for the first
+		Delegate FindSplitPoint(Type typeThis, Type typeNext, string sql, IDataReader r, ref int pos)
+		{
+			// Last?
+			if (typeNext == null)
+				return PocoData.ForType(typeThis).GetFactory(sql, _sharedConnection.ConnectionString, ForceDateTimesToUtc, pos, r.FieldCount - pos, r);
+
+			// Get PocoData for the two types
+			PocoData pdThis = PocoData.ForType(typeThis);
+			PocoData pdNext = PocoData.ForType(typeNext);
+
+			// Find split point
+			int firstColumn = pos;
+			var usedColumns = new Dictionary<string, bool>();
+			for (; pos < r.FieldCount; pos++)
+			{
+				// Split if field name has already been used, or if the field doesn't exist in current poco but does in the next
+				string fieldName = r.GetName(pos);
+				if (usedColumns.ContainsKey(fieldName) || (!pdThis.Columns.ContainsKey(fieldName) && pdNext.Columns.ContainsKey(fieldName)))
+				{
+					return pdThis.GetFactory(sql, _sharedConnection.ConnectionString, ForceDateTimesToUtc, firstColumn, pos - firstColumn, r);
+				}
+				usedColumns.Add(fieldName, true);
+			}
+
+			throw new InvalidOperationException(string.Format("Couldn't find split point between {0} and {1}", typeThis, typeNext));
+		}
+
+		// Instance data used by the Multipoco factory delegate - essentially a list of the nested poco factories to call
+		class MultiPocoFactory
+		{
+			public List<Delegate> m_Delegates;
+			public Delegate GetItem(int index) { return m_Delegates[index]; }
+		}
+
+		// Create a multi-poco factory
+		Func<IDataReader, object, TRet> CreateMultiPocoFactory<TRet>(Type[] types, string sql, IDataReader r)
+		{
+			var m = new DynamicMethod("petapoco_multipoco_factory", typeof(TRet), new Type[] { typeof(MultiPocoFactory), typeof(IDataReader), typeof(object) }, typeof(MultiPocoFactory));
+			var il = m.GetILGenerator();
+
+			// Load the callback
+			il.Emit(OpCodes.Ldarg_2);
+
+			// Call each delegate
+			var dels = new List<Delegate>();
+			int pos = 0;
+			for (int i=0; i<types.Length; i++)
+			{
+				// Add to list of delegates to call
+				var del = FindSplitPoint(types[i], i + 1 < types.Length ? types[i + 1] : null, sql, r, ref pos);
+				dels.Add(del);
+
+				// Get the delegate
+				il.Emit(OpCodes.Ldarg_0);													// callback,this
+				il.Emit(OpCodes.Ldc_I4, i);													// callback,this,Index
+				il.Emit(OpCodes.Callvirt, typeof(MultiPocoFactory).GetMethod("GetItem"));	// callback,Delegate
+				il.Emit(OpCodes.Ldarg_1);													// callback,delegate, datareader
+
+				// Call Invoke
+				var tDelInvoke = del.GetType().GetMethod("Invoke");
+				il.Emit(OpCodes.Callvirt, tDelInvoke);										// Poco left on stack
+			}
+
+			// By now we should have the callback and the N pocos all on the stack.  Call the callback and we're done
+			il.Emit(OpCodes.Callvirt, Expression.GetFuncType(types.Concat(new Type[] { typeof(TRet) }).ToArray()).GetMethod("Invoke"));
+			il.Emit(OpCodes.Ret);
+
+			// Finish up
+			return (Func<IDataReader, object, TRet>)m.CreateDelegate(typeof(Func<IDataReader, object, TRet>), new MultiPocoFactory() { m_Delegates = dels });
+		}
+
+		// Various cached stuff
+		static Dictionary<string, object> MultiPocoFactories = new Dictionary<string, object>();
+		static Dictionary<string, object> AutoMappers = new Dictionary<string, object>();
+		static System.Threading.ReaderWriterLockSlim RWLock = new System.Threading.ReaderWriterLockSlim();
+
+		// Get (or create) the multi-poco factory for a query
+		Func<IDataReader, object, TRet> GetMultiPocoFactory<TRet>(Type[] types, string sql, IDataReader r)
+		{
+			// Build a key string  (this is crap, should address this at some point)
+			var kb = new StringBuilder();
+			kb.Append(typeof(TRet).ToString());
+			kb.Append(":");
+			foreach (var t in types)
+			{
+				kb.Append(":");
+				kb.Append(t.ToString());
+			}
+			kb.Append(":"); kb.Append(_sharedConnection.ConnectionString);
+			kb.Append(":"); kb.Append(ForceDateTimesToUtc);
+			kb.Append(":"); kb.Append(sql);
+			string key = kb.ToString();
+
+			// Check cache
+			RWLock.EnterReadLock();
+			try
+			{
+				object oFactory;
+				if (MultiPocoFactories.TryGetValue(key, out oFactory))
+					return (Func<IDataReader, object, TRet>)oFactory;
+			}
+			finally
+			{
+				RWLock.ExitReadLock();
+			}
+
+			// Cache it
+			RWLock.EnterWriteLock();
+			try
+			{
+				// Check again
+				object oFactory;
+				if (MultiPocoFactories.TryGetValue(key, out oFactory))
+					return (Func<IDataReader, object, TRet>)oFactory;
+
+				// Create the factory
+				var Factory = CreateMultiPocoFactory<TRet>(types, sql, r);
+
+				MultiPocoFactories.Add(key, Factory);
+				return Factory;
+			}
+			finally
+			{
+				RWLock.ExitWriteLock();
+			}
+
+		}
+
+		// Actual implementation of the multi-poco query
+		public IEnumerable<TRet> Query<TRet>(Type[] types, object cb, string sql, params object[] args)
+		{
+			OpenSharedConnection();
+			try
+			{
+				using (var cmd = CreateCommand(_sharedConnection, sql, args))
+				{
+					IDataReader r;
+					try
+					{
+						r = cmd.ExecuteReader();
+						OnExecutedCommand(cmd);
+					}
+					catch (Exception x)
+					{
+						OnException(x);
+						throw;
+					}
+					var factory = GetMultiPocoFactory<TRet>(types, sql, r);
+					if (cb == null)
+						cb = GetAutoMapper(types.ToArray());
+					bool bNeedTerminator=false;
+					using (r)
+					{
+						while (true)
+						{
+							TRet poco;
+							try
+							{
+								if (!r.Read())
+									break;
+								poco = factory(r, cb);
+							}
+							catch (Exception x)
+							{
+								OnException(x);
+								throw;
+							}
+
+							if (poco != null)
+								yield return poco;
+							else
+								bNeedTerminator = true;
+						}
+						if (bNeedTerminator)
+						{
+							var poco = (TRet)(cb as Delegate).DynamicInvoke(new object[types.Length]);
+							if (poco != null)
+								yield return poco;
+							else
+								yield break;
+						}
+					}
+				}
+			}
+			finally
+			{
+				CloseSharedConnection();
+			}
 		}
 
 		public bool Exists<T>(object primaryKey) 
@@ -1009,6 +1395,21 @@ namespace PetaPoco
 								}
 								OnExecutedCommand(cmd);
 								break;
+                            case DBType.SQLite:
+                                if (primaryKeyName != null)
+                                {
+                                    cmd.CommandText += ";\nSELECT last_insert_rowid();";
+                                    DoPreExecute(cmd);
+                                    id = cmd.ExecuteScalar();
+                                }
+                                else
+                                {
+                                    id = -1;
+                                    DoPreExecute(cmd);
+                                    cmd.ExecuteNonQuery();
+                                }
+                                OnExecutedCommand(cmd);
+                                break;
 							default:
 								cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
 								DoPreExecute(cmd);
@@ -1339,9 +1740,26 @@ namespace PetaPoco
 			Save(pd.TableInfo.TableName, pd.TableInfo.PrimaryKey, poco);
 		}
 
+		public int CommandTimeout { get; set; }
+		public int OneTimeCommandTimeout { get; set; }
+
 		void DoPreExecute(IDbCommand cmd)
 		{
+			// Setup command timeout
+			if (OneTimeCommandTimeout != 0)
+			{
+				cmd.CommandTimeout = OneTimeCommandTimeout;
+				OneTimeCommandTimeout = 0;
+			}
+			else if (CommandTimeout!=0)
+			{
+				cmd.CommandTimeout = CommandTimeout;
+			}
+			
+			// Call hook
 			OnExecutingCommand(cmd);
+
+			// Save it
 			_lastSql = cmd.CommandText;
 			_lastArgs = (from IDataParameter parameter in cmd.Parameters select parameter.Value).ToArray();
 		}
@@ -1435,23 +1853,46 @@ namespace PetaPoco
 #endif
 					return ForType(t);
 			}
+			static System.Threading.ReaderWriterLockSlim RWLock = new System.Threading.ReaderWriterLockSlim();
             public static PocoData ForType(Type t)
             {
 #if !PETAPOCO_NO_DYNAMIC
 				if (t == typeof(System.Dynamic.ExpandoObject))
 					throw new InvalidOperationException("Can't use dynamic types with this method");
 #endif
-                lock (m_PocoDatas)
+				// Check cache
+				RWLock.EnterReadLock();
+                PocoData pd;
+    			try
                 {
-                    PocoData pd;
-                    if (!m_PocoDatas.TryGetValue(t, out pd))
-                    {
-                        pd = Mappings != null && Mappings.Config.ContainsKey(t) ? new PocoData(t, Mappings.Config[t]) : new PocoData(t);
-                        m_PocoDatas.Add(t, pd);
-                    }
+        			if (m_PocoDatas.TryGetValue(t, out pd))
+						return pd;
+				}
+				finally
+				{
+					RWLock.ExitReadLock();
+				}
+
+				
+				// Cache it
+				RWLock.EnterWriteLock();
+				try
+				{
+					// Check again
+					if (m_PocoDatas.TryGetValue(t, out pd))
+						return pd;
+
+					// Create it
+                    pd = Mappings != null && Mappings.Config.ContainsKey(t) ? new PocoData(t, Mappings.Config[t]) : new PocoData(t);
+                    m_PocoDatas.Add(t, pd);
+                }
+                finally
+				{
+					RWLock.ExitWriteLock();
+				}
+
                     return pd;
                 }
-            }
 
 			public PocoData()
 			{
@@ -1459,6 +1900,7 @@ namespace PetaPoco
 
 			public PocoData(Type t)
 			{
+				type = t;
 				TableInfo=new TableInfo();
 
 				// Get the table name
@@ -1601,30 +2043,47 @@ namespace PetaPoco
                 
             }   
 
-            bool IsIntegralType(Type t)
+            static bool IsIntegralType(Type t)
             {
                 var tc = Type.GetTypeCode(t);
                 return tc >= TypeCode.SByte && tc <= TypeCode.UInt64;
             }
 
             // Create factory function that can convert a IDataReader record into a POCO
-            public Func<IDataReader, T> GetFactory<T>(string key, bool ForceDateTimesToUtc, IDataReader r)
+			public Delegate GetFactory(string sql, string connString, bool ForceDateTimesToUtc, int firstColumn, int countColumns, IDataReader r)
             {
-                lock (PocoFactories)
+				// Check cache
+				var key = string.Format("{0}:{1}:{2}:{3}:{4}", sql, connString, ForceDateTimesToUtc, firstColumn, countColumns);
+				RWLock.EnterReadLock();
+				try
                 {
                     // Have we already created it?
-                    object factory;
+					Delegate factory;
                     if (PocoFactories.TryGetValue(key, out factory))
-                        return factory as Func<IDataReader, T>;
+						return factory;
+				}
+				finally
+				{
+					RWLock.ExitReadLock();
+				}
 
-                    lock (m_Converters)
+				// Take the writer lock
+				RWLock.EnterWriteLock();
+
+				try
                     {
+
+                	// Check again, just in case
+					Delegate factory;
+					if (PocoFactories.TryGetValue(key, out factory))
+						return factory;
+					
                         // Create the method
-                        var m = new DynamicMethod("petapoco_factory_" + PocoFactories.Count.ToString(), typeof(T), new Type[] { typeof(IDataReader) }, true);
+                    var m = new DynamicMethod("petapoco_factory_" + PocoFactories.Count.ToString(), type, new Type[] { typeof(IDataReader) }, true);
                         var il = m.GetILGenerator();
 
 #if !PETAPOCO_NO_DYNAMIC
-						if (typeof(T) == typeof(object))
+					if (type == typeof(object))
 						{
                         // var poco=new T()
 							il.Emit(OpCodes.Newobj, typeof(System.Dynamic.ExpandoObject).GetConstructor(Type.EmptyTypes));			// obj
@@ -1632,7 +2091,7 @@ namespace PetaPoco
 							MethodInfo fnAdd = typeof(IDictionary<string, object>).GetMethod("Add");
 
 							// Enumerate all fields generating a set assignment for the column
-							for (int i = 0; i < r.FieldCount; i++)
+						    for (int i = firstColumn; i < firstColumn + countColumns; i++)
 							{
 								var srcType = r.GetFieldType(i);
 
@@ -1647,20 +2106,8 @@ namespace PetaPoco
 									converter = delegate(object src) { return new DateTime(((DateTime)src).Ticks, DateTimeKind.Utc); };
 
 								// Setup stack for call to converter
-								int converterIndex = -1;
-								if (converter != null)
-								{
-									// Add the converter
-									converterIndex = m_Converters.Count;
-									m_Converters.Add(converter);
+                                AddConverterToStack(il, converter);
 
-									// Generate IL to push the converter onto the stack
-									il.Emit(OpCodes.Ldsfld, fldConverters);
-									il.Emit(OpCodes.Ldc_I4, converterIndex);
-									il.Emit(OpCodes.Callvirt, fnListGetItem);					// obj, obj, fieldname, Converter
-								}
-
-		
 								// r[i]
 								il.Emit(OpCodes.Ldarg_0);					// obj, obj, fieldname, converter?,    rdr
 								il.Emit(OpCodes.Ldc_I4, i);					// obj, obj, fieldname, converter?,  rdr,i
@@ -1693,25 +2140,45 @@ namespace PetaPoco
 						}
 						else
 #endif
-						if (typeof(T).IsValueType || typeof(T)==typeof(string) || typeof(T)==typeof(byte[]))
+						if (type.IsValueType || type == typeof(string) || type == typeof(byte[]))
 						{
-						    return (rdr) =>
-						    {
-						        Func<object, object> converter = null;
-						        if (ForceDateTimesToUtc && rdr.GetFieldType(0) == typeof (DateTime) && (typeof (T) == typeof (DateTime) || typeof (T) == typeof (DateTime?)))
-						        {
-						            converter = src => { return new DateTime(((DateTime) src).Ticks, DateTimeKind.Utc); };
+                            // Do we need to install a converter?
+                            var srcType = r.GetFieldType(0);
+                            var converter = GetConverter(ForceDateTimesToUtc, null, srcType, type);
+
+                            // "if (!rdr.IsDBNull(i))"
+							il.Emit(OpCodes.Ldarg_0);										// rdr
+							il.Emit(OpCodes.Ldc_I4_0);										// rdr,0
+							il.Emit(OpCodes.Callvirt, fnIsDBNull);							// bool
+							var lblCont = il.DefineLabel();
+							il.Emit(OpCodes.Brfalse_S, lblCont);
+							il.Emit(OpCodes.Ldnull);										// null
+							var lblFin = il.DefineLabel();
+							il.Emit(OpCodes.Br_S, lblFin);
+
+							il.MarkLabel(lblCont);
+
+                            // Setup stack for call to converter
+                            AddConverterToStack(il, converter);
+
+							il.Emit(OpCodes.Ldarg_0);										// rdr
+							il.Emit(OpCodes.Ldc_I4_0);										// rdr,0
+							il.Emit(OpCodes.Callvirt, fnGetValue);							// value
+
+                            // Call the converter
+                            if (converter != null)
+                                il.Emit(OpCodes.Callvirt, fnInvoke);
+
+							il.MarkLabel(lblFin);
+							il.Emit(OpCodes.Unbox_Any, type);								// value converted
 						        }
-						        return (T) (rdr.IsDBNull(0) ? null : (converter != null ? converter(rdr.GetValue(0)) : rdr.GetValue(0)));
-						    };
-						}
 						else
 						{
 							// var poco=new T()
-							il.Emit(OpCodes.Newobj, typeof(T).GetConstructor(Type.EmptyTypes));
+							il.Emit(OpCodes.Newobj, type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new Type[0], null));
 
 							// Enumerate all fields generating a set assignment for the column
-							for (int i = 0; i < r.FieldCount; i++)
+							for (int i = firstColumn; i < firstColumn + countColumns; i++)
 							{
 								// Get the PocoColumn for this db column, ignore if not known
 								PocoColumn pc;
@@ -1732,35 +2199,7 @@ namespace PetaPoco
 								il.Emit(OpCodes.Dup);											// poco,poco
 
 								// Do we need to install a converter?
-								Func<object, object> converter = null;
-
-								// Get converter from the mapper
-								if (Database.Mapper != null)
-								{
-									converter = Database.Mapper.GetFromDbConverter(pc.PropertyInfo, srcType);
-								}
-
-								// Standard DateTime->Utc mapper
-								if (ForceDateTimesToUtc && converter == null && srcType == typeof(DateTime) && (dstType == typeof(DateTime) || dstType == typeof(DateTime?)))
-								{
-									converter = delegate(object src) { return new DateTime(((DateTime)src).Ticks, DateTimeKind.Utc); };
-								}
-
-								// Forced type conversion including integral types -> enum
-								if (converter == null)
-								{
-									if (dstType.IsEnum && IsIntegralType(srcType))
-									{
-										if (srcType != typeof(int))
-										{
-											converter = delegate(object src) { return Convert.ChangeType(src, typeof(int), null); };
-										}
-									}
-									else if (!dstType.IsAssignableFrom(srcType))
-									{
-										converter = delegate(object src) { return Convert.ChangeType(src, dstType, null); };
-									}
-								}
+                                var converter = GetConverter(ForceDateTimesToUtc, pc, srcType, dstType);
 
 								// Fast
 								bool Handled = false;
@@ -1790,18 +2229,7 @@ namespace PetaPoco
 								if (!Handled)
 								{
 									// Setup stack for call to converter
-									int converterIndex = -1;
-									if (converter != null)
-									{
-										// Add the converter
-										converterIndex = m_Converters.Count;
-										m_Converters.Add(converter);
-
-										// Generate IL to push the converter onto the stack
-										il.Emit(OpCodes.Ldsfld, fldConverters);
-										il.Emit(OpCodes.Ldc_I4, converterIndex);
-										il.Emit(OpCodes.Callvirt, fnListGetItem);					// Converter
-									}
+									AddConverterToStack(il, converter);
 
 									// "value = rdr.GetValue(i)"
 									il.Emit(OpCodes.Ldarg_0);										// *,rdr
@@ -1824,11 +2252,66 @@ namespace PetaPoco
                         il.Emit(OpCodes.Ret);
 
                         // Cache it, return it
-                        var del = (Func<IDataReader, T>)m.CreateDelegate(typeof(Func<IDataReader, T>));
+                    var del = m.CreateDelegate(Expression.GetFuncType(typeof(IDataReader), type));
                         PocoFactories.Add(key, del);
                         return del;
                     }
+		        finally
+				{
+					RWLock.ExitWriteLock();
                 }
+            }
+
+            private static void AddConverterToStack(ILGenerator il, Func<object, object> converter)
+            {
+                if (converter != null)
+                {
+                    // Add the converter
+                    int converterIndex = m_Converters.Count;
+                    m_Converters.Add(converter);
+
+                    // Generate IL to push the converter onto the stack
+                    il.Emit(OpCodes.Ldsfld, fldConverters);
+                    il.Emit(OpCodes.Ldc_I4, converterIndex);
+                    il.Emit(OpCodes.Callvirt, fnListGetItem);					// Converter
+                }
+            }
+
+            private static Func<object, object> GetConverter(bool forceDateTimesToUtc, PocoColumn pc, Type srcType, Type dstType) 
+            {
+                Func<object, object> converter = null;
+
+                // Get converter from the mapper
+                if (Database.Mapper != null)
+                {
+                    DestinationInfo destinationInfo = pc != null
+                                                          ? new DestinationInfo(pc.PropertyInfo)
+                                                          : new DestinationInfo(dstType);
+                    converter = Database.Mapper.GetFromDbConverter(destinationInfo, srcType);
+                }
+
+                // Standard DateTime->Utc mapper
+                if (forceDateTimesToUtc && converter == null && srcType == typeof(DateTime) && (dstType == typeof(DateTime) || dstType == typeof(DateTime?)))
+                {
+                    converter = delegate(object src) { return new DateTime(((DateTime)src).Ticks, DateTimeKind.Utc); };
+                }
+
+                // Forced type conversion including integral types -> enum
+                if (converter == null)
+                {
+                    if (dstType.IsEnum && IsIntegralType(srcType))
+                    {
+                        if (srcType != typeof(int))
+                        {
+                            converter = delegate(object src) { return Convert.ChangeType(src, typeof(int), null); };
+                        }
+                    }
+                    else if (!dstType.IsAssignableFrom(srcType))
+                    {
+                        converter = delegate(object src) { return Convert.ChangeType(src, dstType, null); };
+                    }
+                }
+                return converter;
             }
 
 
@@ -1839,10 +2322,11 @@ namespace PetaPoco
 			static FieldInfo fldConverters = typeof(PocoData).GetField("m_Converters", BindingFlags.Static | BindingFlags.GetField | BindingFlags.NonPublic);
 			static MethodInfo fnListGetItem = typeof(List<Func<object, object>>).GetProperty("Item").GetGetMethod();
 			static MethodInfo fnInvoke = typeof(Func<object, object>).GetMethod("Invoke");
+			public Type type;
 			public string[] QueryColumns { get; private set; }
 			public TableInfo TableInfo { get; private set; }
 			public Dictionary<string, PocoColumn> Columns { get; private set; }
-			Dictionary<string, object> PocoFactories = new Dictionary<string, object>();
+			Dictionary<string, Delegate> PocoFactories = new Dictionary<string, Delegate>();
 		}
 
 		// Member variables
