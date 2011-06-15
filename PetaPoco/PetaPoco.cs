@@ -181,6 +181,8 @@ namespace PetaPoco
         List<T> Fetch<T>(long page, long itemsPerPage, Sql sql);
         Page<T> Page<T>(long page, long itemsPerPage, string sql, params object[] args);
         Page<T> Page<T>(long page, long itemsPerPage, Sql sql);
+        List<T> SkipTake<T>(long skip, long take, string sql, params object[] args);
+        List<T> SkipTake<T>(long skip, long take, Sql sql);
         List<TRet> Fetch<T1, T2, TRet>(Func<T1, T2, TRet> cb, string sql, params object[] args);
         List<TRet> Fetch<T1, T2, T3, TRet>(Func<T1, T2, T3, TRet> cb, string sql, params object[] args);
         List<TRet> Fetch<T1, T2, T3, T4, TRet>(Func<T1, T2, T3, T4, TRet> cb, string sql, params object[] args);
@@ -773,7 +775,7 @@ namespace PetaPoco
 			return true;
 		}
 
-		public void BuildPageQueries<T>(long page, long itemsPerPage, string sql, ref object[] args, out string sqlCount, out string sqlPage) 
+		private void BuildPageQueries<T>(long skip, long take, string sql, ref object[] args, out string sqlCount, out string sqlPage) 
 		{
 			// Add auto select clause
 			sql=AddSelectClause<T>(sql);
@@ -789,28 +791,32 @@ namespace PetaPoco
             if (_dbType == DBType.SqlServer || _dbType == DBType.Oracle)
             {
 				sqlSelectRemoved = rxOrderBy.Replace(sqlSelectRemoved, "");
-				sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) peta_rn, {1}) peta_paged WHERE peta_rn>@{2} AND peta_rn<=@{3}",
+                sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) peta_rn, {1}) peta_paged WHERE peta_rn>@{2} AND peta_rn<=@{3}",
 										sqlOrderBy, sqlSelectRemoved, args.Length, args.Length+1);
-				args = args.Concat(new object[] { (page - 1) * itemsPerPage, page * itemsPerPage }).ToArray();
-			}
-			else if (_dbType==DBType.SqlServerCE)
-			{
-				sqlPage = string.Format("{0}\nOFFSET @{1} ROWS FETCH NEXT @{2} ROWS ONLY", sql, args.Length, args.Length + 1);
-				args = args.Concat(new object[] { (page - 1) * itemsPerPage, itemsPerPage }).ToArray();
-			}
-			else
-			{
-				sqlPage = string.Format("{0}\nLIMIT @{1} OFFSET @{2}", sql, args.Length, args.Length+1);
-				args = args.Concat(new object[] { itemsPerPage, (page - 1) * itemsPerPage}).ToArray();
-			}
-
+                args = args.Concat(new object[] { skip, skip + take }).ToArray();
+            }
+            else if (_dbType == DBType.SqlServerCE)
+            {
+                sqlPage = string.Format("{0}\nOFFSET @{1} ROWS FETCH NEXT @{2} ROWS ONLY", sql, args.Length, args.Length + 1);
+                args = args.Concat(new object[] { skip, take }).ToArray();
+            }
+            else
+            {
+                sqlPage = string.Format("{0}\nLIMIT @{1} OFFSET @{2}", sql, args.Length, args.Length + 1);
+                args = args.Concat(new object[] { take, skip }).ToArray();
+            }
+            
 		}
 
 		// Fetch a page	
 		public Page<T> Page<T>(long page, long itemsPerPage, string sql, params object[] args) 
 		{
 			string sqlCount, sqlPage;
-			BuildPageQueries<T>(page, itemsPerPage, sql, ref args, out sqlCount, out sqlPage);
+
+		    long skip = (page - 1)*itemsPerPage;
+            long take = itemsPerPage;
+
+			BuildPageQueries<T>(skip, take, sql, ref args, out sqlCount, out sqlPage);
 
 			// Save the one-time command time out and use it for both queries
 			int saveTimeout = OneTimeCommandTimeout;
@@ -838,7 +844,22 @@ namespace PetaPoco
 			return Page<T>(page, itemsPerPage, sql.SQL, sql.Arguments);
 		}
 
-		// Return an enumerable collection of pocos
+        public List<T> SkipTake<T>(long skip, long take, string sql, params object[] args)
+        {
+            string sqlCount, sqlPage;
+
+            BuildPageQueries<T>(skip, take, sql, ref args, out sqlCount, out sqlPage);
+
+            var result = Fetch<T>(sqlPage, args);
+            return result;
+        }
+
+        public List<T> SkipTake<T>(long skip, long take, Sql sql)
+        {
+            return SkipTake<T>(skip, take, sql.SQL, sql.Arguments);
+        }
+
+        // Return an enumerable collection of pocos
         public IEnumerable<T> Query<T>(string sql, params object[] args)
         {
             if (EnableAutoSelect)
