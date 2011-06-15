@@ -790,9 +790,10 @@ namespace PetaPoco
 			// Build the SQL for the actual final result
             if (_dbType == DBType.SqlServer || _dbType == DBType.Oracle)
             {
-				sqlSelectRemoved = rxOrderBy.Replace(sqlSelectRemoved, "");
-                sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) peta_rn, {1}) peta_paged WHERE peta_rn>@{2} AND peta_rn<=@{3}",
-										sqlOrderBy, sqlSelectRemoved, args.Length, args.Length+1);
+                var fromIndex = sqlSelectRemoved.IndexOf("from", StringComparison.OrdinalIgnoreCase);
+                sqlSelectRemoved = rxOrderBy.Replace(sqlSelectRemoved, "");
+                sqlPage = string.Format("SELECT * FROM (SELECT {2}, ROW_NUMBER() OVER ({0}) peta_rn {1}) peta_paged WHERE peta_rn>@{3} AND peta_rn<=@{4}",
+                                        sqlOrderBy, sqlSelectRemoved.Substring(fromIndex), sqlSelectRemoved.Substring(0, fromIndex - 1), args.Length, args.Length + 1);
                 args = args.Concat(new object[] { skip, skip + take }).ToArray();
             }
             else if (_dbType == DBType.SqlServerCE)
