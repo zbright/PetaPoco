@@ -747,30 +747,36 @@ namespace PetaPoco
 
 		static Regex rxColumns = new Regex(@"\A\s*SELECT\s+((?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|.)*?)(?<!,\s+)\bFROM\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
 		static Regex rxOrderBy = new Regex(@"\bORDER\s+BY\s+(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?(?:\s*,\s*(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?)*", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
-		public static bool SplitSqlForPaging(string sql, out string sqlCount, out string sqlSelectRemoved, out string sqlOrderBy)
-		{
-			sqlSelectRemoved = null;
-			sqlCount = null;
-			sqlOrderBy = null;
+        public static bool SplitSqlForPaging<T>(string sql, out string sqlCount, out string sqlSelectRemoved, out string sqlOrderBy)
+        {
+            sqlSelectRemoved = null;
+            sqlCount = null;
+            sqlOrderBy = null;
 
-			// Extract the columns from "SELECT <whatever> FROM"
-			var m = rxColumns.Match(sql);
-			if (!m.Success)
-				return false;
+            // Extract the columns from "SELECT <whatever> FROM"
+            var m = rxColumns.Match(sql);
+            if (!m.Success)
+                return false;
 
-			// Save column list and replace with COUNT(*)
-			Group g = m.Groups[1];
-			sqlCount = sql.Substring(0, g.Index) + "COUNT(*) " + sql.Substring(g.Index + g.Length);
-			sqlSelectRemoved = sql.Substring(g.Index);
+            // Save column list and replace with COUNT(*)
+            Group g = m.Groups[1];
+            sqlCount = sql.Substring(0, g.Index) + "COUNT(*) " + sql.Substring(g.Index + g.Length);
+            sqlSelectRemoved = sql.Substring(g.Index);
 
-			// Look for an "ORDER BY <whatever>" clause
-			m = rxOrderBy.Match(sqlCount);
-			if (!m.Success)
-				return false;
+            // Look for an "ORDER BY <whatever>" clause or primarykey from pocodata
+            var data = PocoData.ForType(typeof (T));
 
-			g = m.Groups[0];
-			sqlOrderBy = g.ToString();
-			sqlCount = sqlCount.Substring(0, g.Index) + sqlCount.Substring(g.Index + g.Length);
+            m = rxOrderBy.Match(sqlCount);
+            if (!m.Success 
+                && (string.IsNullOrEmpty(data.TableInfo.PrimaryKey) || 
+                    (!data.TableInfo.PrimaryKey.Split(',').All(x=> data.Columns.Values.Any(y=>y.ColumnName.Equals(x,StringComparison.OrdinalIgnoreCase))))))
+            {
+                return false;
+            }
+
+            g = m.Groups[0];
+            sqlOrderBy = m.Success ? g.ToString() : "ORDER BY " + data.TableInfo.PrimaryKey;
+            sqlCount = sqlCount.Substring(0, g.Index) + sqlCount.Substring(g.Index + g.Length);
 
 			return true;
 		}
@@ -782,7 +788,7 @@ namespace PetaPoco
 
 			// Split the SQL into the bits we need
 			string sqlSelectRemoved, sqlOrderBy;
-			if (!SplitSqlForPaging(sql, out sqlCount, out sqlSelectRemoved, out sqlOrderBy))
+            if (!SplitSqlForPaging<T>(sql, out sqlCount, out sqlSelectRemoved, out sqlOrderBy))
 				throw new Exception("Unable to parse SQL statement for paged query");
 			if (_dbType == DBType.Oracle && sqlSelectRemoved.StartsWith("*"))
                 throw new Exception("Query must alias '*' when performing a paged query.\neg. select t.* from table t order by t.id");
