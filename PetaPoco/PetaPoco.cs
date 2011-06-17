@@ -870,7 +870,7 @@ namespace PetaPoco
 		{
             string sqlCount, sqlPage;
 			BuildPageQueries<T>(skip, take, sql, ref args, out sqlCount, out sqlPage);
-			return Fetch<T>(skip, take, sqlPage, args);
+            return Fetch<T>(sqlPage, args);
         }
 
 		public List<T> SkipTake<T>(long skip, long take, Sql sql)
