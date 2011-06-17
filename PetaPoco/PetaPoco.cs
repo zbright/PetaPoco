@@ -1,4 +1,4 @@
-﻿/* PetaPoco v4.0.2 - A Tiny ORMish thing for your POCO's.
+/* PetaPoco v4.0.2 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -1947,10 +1947,9 @@ namespace PetaPoco
 						return pd;
 
 					// Create it
-                        pd = Mappings != null && Mappings.Config.ContainsKey(t) ? new PocoData(t, Mappings.Config[t]) : new PocoData(t);
-
-                        m_PocoDatas.Add(t, pd);
-                    }
+                    pd = Mappings != null && Mappings.Config.ContainsKey(t) ? new PocoData(t, Mappings.Config[t]) : new PocoData(t);
+                    m_PocoDatas.Add(t, pd);
+                }
                 finally
 				{
 					RWLock.ExitWriteLock();
@@ -2109,7 +2108,8 @@ namespace PetaPoco
             }   
 
 			static bool IsIntegralType(Type t)
-            {                var tc = Type.GetTypeCode(t);
+            {
+                var tc = Type.GetTypeCode(t);
                 return tc >= TypeCode.SByte && tc <= TypeCode.UInt64;
             }
 
