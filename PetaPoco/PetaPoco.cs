@@ -768,8 +768,12 @@ namespace PetaPoco
 
             // Save column list and replace with COUNT(*)
             Group g = m.Groups[1];
-            sqlCount = sql.Substring(0, g.Index) + "COUNT(*) " + sql.Substring(g.Index + g.Length);
             sqlSelectRemoved = sql.Substring(g.Index);
+
+            if (rxDistinct.IsMatch(sqlSelectRemoved))
+                sqlCount = sql.Substring(0, g.Index) + "COUNT(" + m.Groups[1].ToString().Trim() + ") " + sql.Substring(g.Index + g.Length);
+            else
+                sqlCount = sql.Substring(0, g.Index) + "COUNT(*) " + sql.Substring(g.Index + g.Length);
 
 			// Look for an "ORDER BY <whatever>" clause
             m = rxOrderBy.Match(sqlCount);
