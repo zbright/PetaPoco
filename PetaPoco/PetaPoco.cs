@@ -790,18 +790,14 @@ namespace PetaPoco
 
 			// Look for an "ORDER BY <whatever>" clause
             m = rxOrderBy.Match(sqlCount);
-			if (!m.Success)
-			{
-				sqlOrderBy = null;
-			}
-			else
-			{
-				g = m.Groups[0];
-			    sqlOrderBy = g.ToString();
-				sqlCount = sqlCount.Substring(0, g.Index) + sqlCount.Substring(g.Index + g.Length);
-			}
+		    if (m.Success)
+		    {
+		        g = m.Groups[0];
+		        sqlOrderBy = g.ToString();
+		        sqlCount = sqlCount.Substring(0, g.Index) + sqlCount.Substring(g.Index + g.Length);
+		    }
 
-			return true;
+		    return true;
 		}
 
 		public void BuildPageQueries<T>(long skip, long take, string sql, ref object[] args, out string sqlCount, out string sqlPage) 
