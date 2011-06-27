@@ -503,7 +503,7 @@ namespace PetaPoco
 					var sb = new StringBuilder();
 					foreach (var i in arg_val as System.Collections.IEnumerable)
                     {
-                        var indexOfExistingValue = args_dest.IndexOf(arg_val);
+                        var indexOfExistingValue = args_dest.IndexOf(i);
                         if (indexOfExistingValue >= 0)
                         {
                             sb.Append((sb.Length == 0 ? "@" : ",@") + indexOfExistingValue);
