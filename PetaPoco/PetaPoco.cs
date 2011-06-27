@@ -502,14 +502,26 @@ namespace PetaPoco
 				{
 					var sb = new StringBuilder();
 					foreach (var i in arg_val as System.Collections.IEnumerable)
-					{
-						sb.Append((sb.Length == 0 ? "@" : ",@") + args_dest.Count.ToString());
-						args_dest.Add(i);
-					}
+                    {
+                        var indexOfExistingValue = args_dest.IndexOf(arg_val);
+                        if (indexOfExistingValue >= 0)
+                        {
+                            sb.Append((sb.Length == 0 ? "@" : ",@") + indexOfExistingValue);
+                        } 
+                        else
+                        {
+                            sb.Append((sb.Length == 0 ? "@" : ",@") + args_dest.Count);
+                            args_dest.Add(i);
+                        }
+                    }
 					return sb.ToString();
 				}
 				else
 				{
+				    var indexOfExistingValue = args_dest.IndexOf(arg_val);
+                    if (indexOfExistingValue >= 0)
+                        return "@" + indexOfExistingValue;
+
 					args_dest.Add(arg_val);
 					return "@" + (args_dest.Count - 1).ToString();
 			    }
