@@ -1,4 +1,4 @@
-﻿/* PetaPoco v4.0.2 - A Tiny ORMish thing for your POCO's.
+﻿/* PetaPoco v4.0.3 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -770,10 +770,11 @@ namespace PetaPoco
             Group g = m.Groups[1];
             sqlSelectRemoved = sql.Substring(g.Index);
 
-            if (rxDistinct.IsMatch(sqlSelectRemoved))
-                sqlCount = sql.Substring(0, g.Index) + "COUNT(" + m.Groups[1].ToString().Trim() + ") " + sql.Substring(g.Index + g.Length);
-            else
-                sqlCount = sql.Substring(0, g.Index) + "COUNT(*) " + sql.Substring(g.Index + g.Length);
+			if (rxDistinct.IsMatch(sqlSelectRemoved))
+				sqlCount = sql.Substring(0, g.Index) + "COUNT(" + m.Groups[1].ToString().Trim() + ") " + sql.Substring(g.Index + g.Length);
+			else
+				sqlCount = sql.Substring(0, g.Index) + "COUNT(*) " + sql.Substring(g.Index + g.Length);
+
 
 			// Look for an "ORDER BY <whatever>" clause
             m = rxOrderBy.Match(sqlCount);
@@ -809,7 +810,7 @@ namespace PetaPoco
                 sqlSelectRemoved = rxOrderBy.Replace(sqlSelectRemoved, "");
 				if (rxDistinct.IsMatch(sqlSelectRemoved))
 				{
-					sqlSelectRemoved = "peta_inner.* FROM (SELECT " + sqlSelectRemoved + ") as peta_inner";
+					sqlSelectRemoved = "peta_inner.* FROM (SELECT " + sqlSelectRemoved + ") peta_inner";
 				}
 				sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) peta_rn, {1}) peta_paged WHERE peta_rn>@{2} AND peta_rn<=@{3}",
 										sqlOrderBy==null ? "ORDER BY (SELECT NULL)" : sqlOrderBy, sqlSelectRemoved, args.Length, args.Length + 1);
@@ -1882,7 +1883,7 @@ namespace PetaPoco
 			public virtual object GetValue(object target) { return PropertyInfo.GetValue(target, null); }
 			public virtual object ChangeType(object val) { return Convert.ChangeType(val, PropertyInfo.PropertyType); }
 		}
-		internal class ExpandoColumn : PocoColumn
+		public class ExpandoColumn : PocoColumn
 		{
 			public override void SetValue(object target, object val) { (target as IDictionary<string, object>)[ColumnName]=val; }
 			public override object GetValue(object target) 
@@ -1893,7 +1894,7 @@ namespace PetaPoco
 			}
 			public override object ChangeType(object val) { return val; }
 		}
-        internal class PocoData
+		public class PocoData
         {
 			public static PocoData ForObject(object o, string primaryKeyName)
 			{
