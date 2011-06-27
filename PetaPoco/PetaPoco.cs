@@ -1378,99 +1378,102 @@ namespace PetaPoco
 								string.Join(",", values.ToArray())
 								);
 
-						if (!autoIncrement)
-						{
-							DoPreExecute(cmd);
-							cmd.ExecuteNonQuery();
-							OnExecutedCommand(cmd);
-							return true;
-						}
-
                         object id;
 
-                        switch (_dbType)
-						{
-							case DBType.SqlServerCE:
-								DoPreExecute(cmd);
-								cmd.ExecuteNonQuery();
-								OnExecutedCommand(cmd);
-								id = ExecuteScalar<object>("SELECT @@@IDENTITY AS NewID;");
-								break;
-							case DBType.SqlServer:
-								cmd.CommandText += ";\nSELECT SCOPE_IDENTITY() AS NewID;";
-								DoPreExecute(cmd);
-								id = cmd.ExecuteScalar();
-								OnExecutedCommand(cmd);
-								break;
-							case DBType.PostgreSQL:
-								if (primaryKeyName != null)
-								{
-									cmd.CommandText += string.Format("returning {0} as NewID", EscapeSqlIdentifier(primaryKeyName));
-									DoPreExecute(cmd);
-									id = cmd.ExecuteScalar();
-								}
-								else
-								{
-									id = -1;
-									DoPreExecute(cmd);
-									cmd.ExecuteNonQuery();
-								}
-								OnExecutedCommand(cmd);
-								break;
-							case DBType.Oracle:
-								if (primaryKeyName != null)
-								{
-									cmd.CommandText += string.Format(" returning {0} into :newid", EscapeSqlIdentifier(primaryKeyName));
-									var param = cmd.CreateParameter();
-									param.ParameterName = ":newid";
-									param.Value = DBNull.Value;
-									param.Direction = ParameterDirection.ReturnValue;
-									param.DbType = DbType.Int64;
-									cmd.Parameters.Add(param);
-									DoPreExecute(cmd);
-									cmd.ExecuteNonQuery();
-									id = param.Value;
-								}
-								else
-								{
-									id = -1;
-									DoPreExecute(cmd);
-									cmd.ExecuteNonQuery();
-								}
-								OnExecutedCommand(cmd);
-								break;
-                            case DBType.SQLite:
-                                if (primaryKeyName != null)
-                                {
-                                    cmd.CommandText += ";\nSELECT last_insert_rowid();";
-                                    DoPreExecute(cmd);
-                                    id = cmd.ExecuteScalar();
-                                }
-                                else
-                                {
-                                    id = -1;
+                        if (!autoIncrement)
+                        {
+                            DoPreExecute(cmd);
+                            cmd.ExecuteNonQuery();
+                            OnExecutedCommand(cmd);
+                            id = true;
+                        }
+                        else
+                        {
+
+                            switch (_dbType)
+                            {
+                                case DBType.SqlServerCE:
                                     DoPreExecute(cmd);
                                     cmd.ExecuteNonQuery();
-                                }
-                                OnExecutedCommand(cmd);
-                                break;
-							default:
-								cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
-								DoPreExecute(cmd);
-								id = cmd.ExecuteScalar();
-								OnExecutedCommand(cmd);
-								break;
-						}
+                                    OnExecutedCommand(cmd);
+                                    id = ExecuteScalar<object>("SELECT @@@IDENTITY AS NewID;");
+                                    break;
+                                case DBType.SqlServer:
+                                    cmd.CommandText += ";\nSELECT SCOPE_IDENTITY() AS NewID;";
+                                    DoPreExecute(cmd);
+                                    id = cmd.ExecuteScalar();
+                                    OnExecutedCommand(cmd);
+                                    break;
+                                case DBType.PostgreSQL:
+                                    if (primaryKeyName != null)
+                                    {
+                                        cmd.CommandText += string.Format("returning {0} as NewID", EscapeSqlIdentifier(primaryKeyName));
+                                        DoPreExecute(cmd);
+                                        id = cmd.ExecuteScalar();
+                                    }
+                                    else
+                                    {
+                                        id = -1;
+                                        DoPreExecute(cmd);
+                                        cmd.ExecuteNonQuery();
+                                    }
+                                    OnExecutedCommand(cmd);
+                                    break;
+                                case DBType.Oracle:
+                                    if (primaryKeyName != null)
+                                    {
+                                        cmd.CommandText += string.Format(" returning {0} into :newid", EscapeSqlIdentifier(primaryKeyName));
+                                        var param = cmd.CreateParameter();
+                                        param.ParameterName = ":newid";
+                                        param.Value = DBNull.Value;
+                                        param.Direction = ParameterDirection.ReturnValue;
+                                        param.DbType = DbType.Int64;
+                                        cmd.Parameters.Add(param);
+                                        DoPreExecute(cmd);
+                                        cmd.ExecuteNonQuery();
+                                        id = param.Value;
+                                    }
+                                    else
+                                    {
+                                        id = -1;
+                                        DoPreExecute(cmd);
+                                        cmd.ExecuteNonQuery();
+                                    }
+                                    OnExecutedCommand(cmd);
+                                    break;
+                                case DBType.SQLite:
+                                    if (primaryKeyName != null)
+                                    {
+                                        cmd.CommandText += ";\nSELECT last_insert_rowid();";
+                                        DoPreExecute(cmd);
+                                        id = cmd.ExecuteScalar();
+                                    }
+                                    else
+                                    {
+                                        id = -1;
+                                        DoPreExecute(cmd);
+                                        cmd.ExecuteNonQuery();
+                                    }
+                                    OnExecutedCommand(cmd);
+                                    break;
+                                default:
+                                    cmd.CommandText += ";\nSELECT @@IDENTITY AS NewID;";
+                                    DoPreExecute(cmd);
+                                    id = cmd.ExecuteScalar();
+                                    OnExecutedCommand(cmd);
+                                    break;
+                            }
 
-					    // Assign the ID back to the primary key property
-                        if (primaryKeyName != null)
-						{
-							PocoColumn pc;
-							if (pd.Columns.TryGetValue(primaryKeyName, out pc))
-							{
-								pc.SetValue(poco, pc.ChangeType(id));
-							}
-						}
+                            // Assign the ID back to the primary key property
+                            if (primaryKeyName != null)
+                            {
+                                PocoColumn pc;
+                                if (pd.Columns.TryGetValue(primaryKeyName, out pc))
+                                {
+                                    pc.SetValue(poco, pc.ChangeType(id));
+                                }
+                            }
+                        }
 
                         // Assign the Version column
                         if (!string.IsNullOrEmpty(versionName))
