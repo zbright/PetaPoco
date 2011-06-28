@@ -1578,7 +1578,7 @@ namespace PetaPoco
                         
 
 					    cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2}",
-                                            EscapeSqlIdentifier(tableName), sb.ToString(), BuildPrimaryKeySql(primaryKeyValuePairs, ref index));
+                                            EscapeTableName(tableName), sb.ToString(), BuildPrimaryKeySql(primaryKeyValuePairs, ref index));
 
 					    foreach (var keyValue in primaryKeyValuePairs)
 					    {
