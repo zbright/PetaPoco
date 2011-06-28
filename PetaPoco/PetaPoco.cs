@@ -1308,7 +1308,7 @@ namespace PetaPoco
 
 		public string EscapeTableName(string str)
 		{
-			// Assume table names with "dot", or opening sq is already escaped
+			// Assume table names with "dot" are already escaped
 			return str.IndexOf('.') >= 0 ? str : EscapeSqlIdentifier(str);
 		}
 
@@ -1320,8 +1320,10 @@ namespace PetaPoco
 					return string.Format("`{0}`", str);
 
 				case DBType.PostgreSQL:
-				case DBType.Oracle:
 					return string.Format("\"{0}\"", str);
+
+				case DBType.Oracle:
+					return string.Format("\"{0}\"", str.ToUpperInvariant());
 
 				default:
 					return string.Format("[{0}]", str);
