@@ -606,11 +606,8 @@ namespace PetaPoco
 
 		// Create a command
 		static Regex rxParamsPrefix = new Regex(@"(?<!@)@\w+", RegexOptions.Compiled);
-        public IDbCommand CreateCommand(IDbConnection connection, Sql sqlStatement)
+        IDbCommand CreateCommand(IDbConnection connection, string sql, params object[] args)
 		{
-            var sql = sqlStatement.SQL;
-            var args = sqlStatement.Arguments;
-
 			// Perform parameter prefix replacements
 			if (_paramPrefix != "@")
 				sql = rxParamsPrefix.Replace(sql, m => _paramPrefix + m.Value.Substring(1));
@@ -639,11 +636,11 @@ namespace PetaPoco
 		}
 
 	    // Create a command
-        IDbCommand CreateCommand(IDbConnection connection, string sql, params object[] args)
-        {
-            var sqlStatement = new Sql(sql, args);
-            return CreateCommand(connection, sqlStatement);
-        }
+        //IDbCommand CreateCommand(IDbConnection connection, string sql, params object[] args)
+        //{
+        //    var sqlStatement = new Sql(sql, args);
+        //    return CreateCommand(connection, sqlStatement);
+        //}
 
 	    // Override this to log/capture exceptions
 		public virtual void OnException(Exception x)
@@ -664,14 +661,17 @@ namespace PetaPoco
             return Execute(new Sql(sql, args));
 		}
 
-		public int Execute(Sql sql)
+		public int Execute(Sql Sql)
 		{
+            var sql = Sql.SQL;
+            var args = Sql.Arguments;
+
             try
             {
 				OpenSharedConnection();
                 try
                 {
-                    using (var cmd = CreateCommand(_sharedConnection, sql))
+                    using (var cmd = CreateCommand(_sharedConnection, sql, args))
                     {
                         var result = cmd.ExecuteNonQuery();
                         OnExecutedCommand(cmd);
@@ -696,14 +696,17 @@ namespace PetaPoco
             return ExecuteScalar<T>(new Sql(sql, args));
 		}
 
-		public T ExecuteScalar<T>(Sql sql)
+		public T ExecuteScalar<T>(Sql Sql)
 		{
+            var sql = Sql.SQL;
+            var args = Sql.Arguments;
+
             try
             {
 				OpenSharedConnection();
                 try
                 {
-                    using (var cmd = CreateCommand(_sharedConnection, sql))
+                    using (var cmd = CreateCommand(_sharedConnection, sql, args))
                     {
                         object val = cmd.ExecuteScalar();
                         OnExecutedCommand(cmd);
@@ -748,9 +751,6 @@ namespace PetaPoco
 		// Return a typed list of pocos
 		public List<T> Fetch<T>(string sql, params object[] args) 
 		{
-            if (EnableAutoSelect)
-                sql = AddSelectClause<T>(sql);
-
 		    return Fetch<T>(new Sql(sql, args));
 		}
             
@@ -761,7 +761,7 @@ namespace PetaPoco
 
         public List<T> Fetch<T>()
         {
-            return Fetch<T>(AddSelectClause<T>(""));
+            return Fetch<T>("");
         }
 
 		static Regex rxColumns = new Regex(@"\A\s*SELECT\s+((?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|.)*?)(?<!,\s+)\bFROM\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
@@ -894,18 +894,21 @@ namespace PetaPoco
         // Return an enumerable collection of pocos
         public IEnumerable<T> Query<T>(string sql, params object[] args)
         {
-            if (EnableAutoSelect)
-                sql = AddSelectClause<T>(sql);
-
             return Query<T>(new Sql(sql, args));
         }
 
-        public IEnumerable<T> Query<T>(Sql sql) 
+        public IEnumerable<T> Query<T>(Sql Sql) 
 		{
+            var sql = Sql.SQL;
+            var args = Sql.Arguments;
+
+            if (EnableAutoSelect)
+                sql = AddSelectClause<T>(sql);
+
             OpenSharedConnection();
             try
             {
-                using (var cmd = CreateCommand(_sharedConnection, sql))
+                using (var cmd = CreateCommand(_sharedConnection, sql, args))
                 {
                     IDataReader r;
                     var pd = PocoData.ForType(typeof(T));
@@ -2182,10 +2185,12 @@ namespace PetaPoco
 							{
 								// Get the PocoColumn for this db column, ignore if not known
 								PocoColumn pc;
-								if (!Columns.TryGetValue(r.GetName(i), out pc))
-									continue;
+							    if (!Columns.TryGetValue(r.GetName(i), out pc) && !Columns.TryGetValue(r.GetName(i).Replace("_", ""), out pc))
+							    {
+							        continue;
+							    }
 
-								// Get the source type for this column
+							    // Get the source type for this column
 								var srcType = r.GetFieldType(i);
 								var dstType = pc.PropertyInfo.PropertyType;
 
