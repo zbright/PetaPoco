@@ -910,20 +910,19 @@ namespace PetaPoco
 
         public Dictionary<TKey, TValue> Dictionary<TKey, TValue>(string sql, params object[] args)
         {
-            var mapper = Mapper as IMapper2;
             var newDict = new Dictionary<TKey, TValue>();
             bool isConverterSet = false;
             Func<object, object> converter1 = x => x, converter2 = x => x;
 
             foreach (var line in Query<Dictionary<string, object>>(sql, args))
             {
-                var key = line.ElementAt(0).Value;
-                var value = line.ElementAt(1).Value;
+                object key = line.ElementAt(0).Value;
+                object value = line.ElementAt(1).Value;
 
-                if (mapper != null && isConverterSet == false)
+                if (isConverterSet == false)
                 {
-                    converter1 = mapper.GetFromDbConverter(typeof (TKey), key.GetType()) ?? (x => x);
-                    converter2 = mapper.GetFromDbConverter(typeof (TValue), value.GetType()) ?? (x => x);
+                    converter1 = PocoData.GetConverter(ForceDateTimesToUtc, null, typeof (TKey), key.GetType()) ?? (x => x);
+                    converter2 = PocoData.GetConverter(ForceDateTimesToUtc, null, typeof (TValue), value.GetType()) ?? (x => x);
                     isConverterSet = true;
                 }
 
@@ -2356,7 +2355,7 @@ namespace PetaPoco
 				}
 			}
 
-			private static Func<object, object> GetConverter(bool forceDateTimesToUtc, PocoColumn pc, Type srcType, Type dstType)
+			public static Func<object, object> GetConverter(bool forceDateTimesToUtc, PocoColumn pc, Type srcType, Type dstType)
 			{
 				Func<object, object> converter = null;
 
