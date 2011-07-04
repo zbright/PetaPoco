@@ -2187,6 +2187,23 @@ namespace PetaPoco
 							il.MarkLabel(lblFin);
 							il.Emit(OpCodes.Unbox_Any, type);								// value converted
 						}
+                        else if (type == typeof(Dictionary<string, object>))
+                        {
+                            Func<IDataReader, Dictionary<string, object>> func = reader =>
+                            {
+                                var dict = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                                for (int i = firstColumn; i < firstColumn + countColumns; i++)
+                                {
+                                    var value = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                                    dict.Add(reader.GetName(i), value);
+                                }
+                                return dict;
+                            };
+
+                            var localDel = Delegate.CreateDelegate(typeof(Func<IDataReader, Dictionary<string, object>>), func.Target, func.Method);
+                            PocoFactories.Add(key, localDel);
+                            return localDel;
+                        }
 						else
 						{
 							// var poco=new T()
