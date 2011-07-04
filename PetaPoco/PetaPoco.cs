@@ -903,6 +903,44 @@ namespace PetaPoco
 			return SkipTake<T>(skip, take, sql.SQL, sql.Arguments);
         }
 
+        public Dictionary<TKey, TValue> Dictionary<TKey, TValue>(Sql Sql)
+        {
+            return Dictionary<TKey, TValue>(Sql.SQL, Sql.Arguments);
+        }
+
+        public Dictionary<TKey, TValue> Dictionary<TKey, TValue>(string sql, params object[] args)
+        {
+            var mapper = Mapper as IMapper2;
+            var newDict = new Dictionary<TKey, TValue>();
+            bool isConverterSet = false;
+            Func<object, object> converter1 = x => x, converter2 = x => x;
+
+            foreach (var line in Query<Dictionary<string, object>>(sql, args))
+            {
+                var key = line.ElementAt(0).Value;
+                var value = line.ElementAt(1).Value;
+
+                if (mapper != null && isConverterSet == false)
+                {
+                    converter1 = mapper.GetFromDbConverter(typeof (TKey), key.GetType()) ?? (x => x);
+                    converter2 = mapper.GetFromDbConverter(typeof (TValue), value.GetType()) ?? (x => x);
+                    isConverterSet = true;
+                }
+
+                var keyConverted = (TKey) Convert.ChangeType(converter1(key), typeof (TKey));
+
+                var valueType = Nullable.GetUnderlyingType(typeof (TValue)) ?? typeof (TValue);
+                var valConv = converter2(value);
+                var valConverted = valConv != null ? (TValue)Convert.ChangeType(valConv, valueType) : default(TValue);
+
+                if (keyConverted != null)
+                {
+                    newDict.Add(keyConverted, valConverted);
+                }
+            }
+            return newDict;
+        }
+
         // Return an enumerable collection of pocos
         public IEnumerable<T> Query<T>(string sql, params object[] args)
         {
