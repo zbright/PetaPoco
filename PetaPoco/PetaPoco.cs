@@ -2232,7 +2232,9 @@ namespace PetaPoco
                                 for (int i = firstColumn; i < firstColumn + countColumns; i++)
                                 {
                                     var value = reader.IsDBNull(i) ? null : reader.GetValue(i);
-                                    dict.Add(reader.GetName(i), value);
+                                    var name = reader.GetName(i);
+                                    if (!dict.ContainsKey(name))
+                                        dict.Add(name, value);
                                 }
                                 return dict;
                             };
