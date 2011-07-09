@@ -113,7 +113,7 @@ namespace PetaPoco
             {
                 property1 = typeof(T).GetProperties().Where(x => typeof(List<TSub>).IsAssignableFrom(x.PropertyType)).FirstOrDefault();
                 if (property1 == null)
-                    ThrowPropertyNotFoundException<T, TSub>();
+                    ThrowPropertyNotFoundException<T, List<TSub>>();
             }
 
             if (onetomanycurrent != null && idFunc((T)onetomanycurrent).Equals(idFunc(main)))
