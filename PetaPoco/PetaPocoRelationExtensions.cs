@@ -9,60 +9,80 @@ namespace PetaPoco
 {
     public static class PetaPocoRelationExtensions
     {
-        public static List<T> FetchOneToMany<T, T1>(this IDatabase db, Func<T, object> key, Expression<Func<T, List<T1>>> list, Sql Sql)
+        public static List<T> FetchOneToMany<T, T1>(this IDatabase db, Func<T, object> key, Sql Sql)
         {
-            return db.FetchOneToMany(key, list, Sql.SQL, Sql.Arguments);
+            return db.FetchOneToMany<T, T1>(key, Sql.SQL, Sql.Arguments);
         }
 
-        public static List<T> FetchManyToOne<T, T1>(this IDatabase db, Func<T, object> key, Expression<Func<T, T1>> item, Sql Sql)
+        public static List<T> FetchManyToOne<T, T1>(this IDatabase db, Func<T, object> key, Sql Sql)
         {
-            return db.FetchManyToOne(key, item, Sql.SQL, Sql.Arguments);
+            return db.FetchManyToOne<T, T1>(key, Sql.SQL, Sql.Arguments);
         }
 
-        public static List<T> FetchManyToOne<T, T1, T2>(this IDatabase db, Func<T, object> key, Expression<Func<T, T1>> item, Expression<Func<T, T2>> item2, Sql Sql)
+        public static List<T> FetchManyToOne<T, T1, T2>(this IDatabase db, Func<T, object> key, Sql Sql)
         {
-            return db.FetchManyToOne(key, item, item2, Sql.SQL, Sql.Arguments);
+            return db.FetchManyToOne<T, T1, T2>(key, Sql.SQL, Sql.Arguments);
         }
 
-        public static List<T> FetchOneToMany<T, T1>(this IDatabase db, Func<T, object> key, Expression<Func<T, List<T1>>> list, string sql, params object[] args)
+        public static List<T> FetchOneToMany<T, T1>(this IDatabase db, Func<T, object> key, string sql, params object[] args)
         {
             var relator = new Relator();
-            return db.Fetch<T, T1, T>((a, b) => relator.OneToMany(a, b, key, list), sql, args);
+            return db.Fetch<T, T1, T>((a, b) => relator.OneToMany(a, b, key), sql, args);
         }
 
-        public static List<T> FetchManyToOne<T, T1>(this IDatabase db, Func<T, object> key, Expression<Func<T, T1>> item, string sql, params object[] args)
+        public static List<T> FetchManyToOne<T, T1>(this IDatabase db, Func<T, object> key, string sql, params object[] args)
         {
             var relator = new Relator();
-            return db.Fetch<T, T1, T>((a, b) => relator.ManyToOne(a, b, key, item), sql, args);
+            return db.Fetch<T, T1, T>((a, b) => relator.ManyToOne(a, b, key), sql, args);
         }
 
-        public static List<T> FetchManyToOne<T, T1, T2>(this IDatabase db, Func<T, object> key, Expression<Func<T, T1>> item, Expression<Func<T, T2>> item2, string sql, params object[] args)
+        public static List<T> FetchManyToOne<T, T1, T2>(this IDatabase db, Func<T, object> key, string sql, params object[] args)
         {
             var relator = new Relator();
-            return db.Fetch<T, T1, T2, T>((a, b, c) => relator.ManyToOne(a, b, c, key, item, item2), sql, args);
+            return db.Fetch<T, T1, T2, T>((a, b, c) => relator.ManyToOne(a, b, c, key), sql, args);
         }
     }
 
     public class Relator
     {
         private Dictionary<object, object> onemanytoone = new Dictionary<object, object>();
-        public T ManyToOne<T, U>(T main, U sub, Func<T, object> idFunc, Expression<Func<T, U>> item)
+        public T ManyToOne<T, TSub1>(T main, TSub1 sub, Func<T, object> idFunc)
         {
+            if (property1 == null)
+            {
+                property1 = typeof(T).GetProperties().Where(x => typeof(TSub1) == x.PropertyType).FirstOrDefault();
+                if (property1 == null)
+                    ThrowPropertyNotFoundException<T, TSub1>();
+            }
+
             object aExisting;
             if (onemanytoone.TryGetValue(idFunc(main), out aExisting))
-                sub = (U)aExisting;
+                sub = (TSub1)aExisting;
             else
                 onemanytoone.Add(idFunc(main), sub);
 
-            // Wire up objects
-            AssignValue(item, main, sub);
+            property1.SetValue(main, sub, null);
 
             return main;
         }
 
         private Dictionary<string, object> twomanytoone = new Dictionary<string, object>();
-        public T ManyToOne<T, TSub1, TSub2>(T main, TSub1 sub1, TSub2 sub2, Func<T, object> idFunc, Expression<Func<T, TSub1>> item, Expression<Func<T, TSub2>> item2)
+        public T ManyToOne<T, TSub1, TSub2>(T main, TSub1 sub1, TSub2 sub2, Func<T, object> idFunc)
         {
+            if (property1 == null)
+            {
+                property1 = typeof(T).GetProperties().Where(x => typeof(TSub1) == x.PropertyType).FirstOrDefault();
+                if (property1 == null)
+                    ThrowPropertyNotFoundException<T, TSub1>();
+            }
+
+            if (property2 == null)
+            {
+                property2 = typeof(T).GetProperties().Where(x => typeof(TSub2)  == x.PropertyType).FirstOrDefault();
+                if (property2 == null)
+                    ThrowPropertyNotFoundException<T, TSub2>();
+            }
+
             object aExisting;
             if (twomanytoone.TryGetValue(idFunc(main) + typeof(TSub1).Name, out aExisting))
                 sub1 = (TSub1)aExisting;
@@ -75,64 +95,44 @@ namespace PetaPoco
             else
                 twomanytoone.Add(idFunc(main) + typeof(TSub2).Name, sub2);
 
-            // Wire up objects
-            AssignValue(item, main, sub1);
-            AssignValue(item2, main, sub2);
+            property1.SetValue(main, sub1, null);
+            property2.SetValue(main, sub2, null);
 
             return main;
         }
 
         private object onetomanycurrent;
-        public T OneToMany<T, TSub>(T main, TSub sub, Func<T, object> idFunc, Expression<Func<T, List<TSub>>> item)
+        private PropertyInfo property1;
+        private PropertyInfo property2;
+        public T OneToMany<T, TSub>(T main, TSub sub, Func<T, object> idFunc)
         {
             if (main == null)
                 return (T)onetomanycurrent;
 
-            if (onetomanycurrent != null && idFunc((T)onetomanycurrent) == idFunc(main))
+            if (property1 == null)
             {
-                item.Compile()((T)onetomanycurrent).Add(sub);
+                property1 = typeof(T).GetProperties().Where(x => typeof(List<TSub>).IsAssignableFrom(x.PropertyType)).FirstOrDefault();
+                if (property1 == null)
+                    ThrowPropertyNotFoundException<T, TSub>();
+            }
+
+            if (onetomanycurrent != null && idFunc((T)onetomanycurrent).Equals(idFunc(main)))
+            {
+                ((List<TSub>)property1.GetValue((T)onetomanycurrent, null)).Add(sub);
                 return default(T);
             }
 
             var prev = (T)onetomanycurrent;
             onetomanycurrent = main;
-            AssignValue(item, (T)onetomanycurrent, new List<TSub> { sub });
+
+            property1.SetValue((T)onetomanycurrent, new List<TSub> { sub }, null);
 
             return prev;
         }
 
-        private static void AssignValue<TSource, TResult>(Expression<Func<TSource, TResult>> expression, TSource source, TResult result)
+        private static void ThrowPropertyNotFoundException<T, TSub1>()
         {
-            var paramExp = expression.Parameters.Single();
-            Expression assignExp;
-#if PETAPOCO_NO_DYNAMIC    
-            assignExp = AssignmentExpression.Create(expression.Body, Expression.Constant(result));
-#else
-            assignExp = Expression.Assign(expression.Body, Expression.Constant(result));
-#endif
-            
-            var lambdaExp = Expression.Lambda(assignExp, paramExp);
-            lambdaExp.Compile().DynamicInvoke(source);
-        }
-
-        private static class AssignmentExpression
-        {
-            public static Expression Create(Expression left, Expression right)
-            {
-                return
-                    Expression.Call(
-                       null,
-                       typeof(AssignmentExpression)
-                          .GetMethod("AssignTo", BindingFlags.NonPublic | BindingFlags.Static)
-                          .MakeGenericMethod(left.Type),
-                       left,
-                       right);
-            }
-
-            private static void AssignTo<T>(ref T left, T right)  // note the 'ref', which is
-            {                                                     // important when assigning
-                left = right;                                     // to value types!
-            }
+            throw new Exception(string.Format("No Property of type {0} found on object of type: {1}", typeof(TSub1).Name, typeof(T).Name));
         }
     }
 }
