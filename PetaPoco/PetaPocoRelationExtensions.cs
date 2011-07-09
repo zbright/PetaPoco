@@ -104,7 +104,13 @@ namespace PetaPoco
         private static void AssignValue<TSource, TResult>(Expression<Func<TSource, TResult>> expression, TSource source, TResult result)
         {
             var paramExp = expression.Parameters.Single();
-            var assignExp = AssignmentExpression.Create(expression.Body, Expression.Constant(result));
+            Expression assignExp;
+#if PETAPOCO_NO_DYNAMIC    
+            assignExp = AssignmentExpression.Create(expression.Body, Expression.Constant(result));
+#else
+            assignExp = Expression.Assign(expression.Body, Expression.Constant(result));
+#endif
+            
             var lambdaExp = Expression.Lambda(assignExp, paramExp);
             lambdaExp.Compile().DynamicInvoke(source);
         }

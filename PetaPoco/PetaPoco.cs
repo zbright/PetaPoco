@@ -8,7 +8,7 @@
  * and Adam Schroder (@schotime) for lots of suggestions, improvements and Oracle support
  */
 
-#define PETAPOCO_NO_DYNAMIC //in your project settings on .NET 3.5
+//#define PETAPOCO_NO_DYNAMIC //in your project settings on .NET 3.5
 
 using System;
 using System.Collections;
