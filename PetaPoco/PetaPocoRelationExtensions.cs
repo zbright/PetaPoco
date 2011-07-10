@@ -78,7 +78,7 @@ namespace PetaPoco
 
             if (property2 == null)
             {
-                property2 = typeof(T).GetProperties().Where(x => typeof(TSub2)  == x.PropertyType).FirstOrDefault();
+                property2 = typeof(T).GetProperties().Where(x => typeof(TSub2) == x.PropertyType).FirstOrDefault();
                 if (property2 == null)
                     ThrowPropertyNotFoundException<T, TSub2>();
             }
@@ -111,14 +111,14 @@ namespace PetaPoco
 
             if (property1 == null)
             {
-                property1 = typeof(T).GetProperties().Where(x => typeof(List<TSub>).IsAssignableFrom(x.PropertyType)).FirstOrDefault();
+                property1 = typeof(T).GetProperties().Where(x => typeof(ICollection<TSub>).IsAssignableFrom(x.PropertyType)).FirstOrDefault();
                 if (property1 == null)
-                    ThrowPropertyNotFoundException<T, List<TSub>>();
+                    ThrowPropertyNotFoundException<T, ICollection<TSub>>();
             }
 
             if (onetomanycurrent != null && idFunc((T)onetomanycurrent).Equals(idFunc(main)))
             {
-                ((List<TSub>)property1.GetValue((T)onetomanycurrent, null)).Add(sub);
+                ((ICollection<TSub>)property1.GetValue((T)onetomanycurrent, null)).Add(sub);
                 return default(T);
             }
 
