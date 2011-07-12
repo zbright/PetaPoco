@@ -272,13 +272,16 @@ namespace PetaPoco
     {
         public const string MsSqlClientProvider = "System.Data.SqlClient";
 
-		public Database(IDbConnection connection)
-		{
-			_sharedConnection = connection;
-			_connectionString = connection.ConnectionString;
-			_sharedConnectionDepth = 2;		// Prevent closing external connection
-			CommonConstruct();
-		}
+		public Database(IDbConnection connection) : this(connection, DBType.NotSet) {}
+
+        public Database(IDbConnection connection, DBType dbType)
+        {
+            _sharedConnection = connection;
+            _connectionString = connection.ConnectionString;
+            _sharedConnectionDepth = 2;		// Prevent closing external connection
+            _dbType = dbType;
+            CommonConstruct();
+        }
 
 		public Database(string connectionString, string providerName)
 		{
@@ -318,8 +321,9 @@ namespace PetaPoco
 			CommonConstruct();
 		}
 
-		enum DBType
+        public enum DBType
 		{
+            NotSet,
 			SqlServer,
 			SqlServerCE,
 			MySql,
@@ -327,7 +331,8 @@ namespace PetaPoco
 			Oracle,
             SQLite
 		}
-		DBType _dbType = DBType.SqlServer;
+
+        private DBType _dbType = DBType.NotSet;
 
 		// Common initialization
 		private void CommonConstruct()
@@ -339,14 +344,23 @@ namespace PetaPoco
 			if (_providerName != null)
 				_factory = DbProviderFactories.GetFactory(_providerName);
 
-			string dbtype = (_factory==null ? _sharedConnection.GetType() : _factory.GetType()).Name;
-			if (dbtype.StartsWith("MySql"))			_dbType = DBType.MySql;
-			else if (dbtype.StartsWith("SqlCe"))	_dbType = DBType.SqlServerCE;
-			else if (dbtype.StartsWith("Npgsql"))	_dbType = DBType.PostgreSQL;
-			else if (dbtype.StartsWith("Oracle"))	_dbType = DBType.Oracle;
-            else if (dbtype.StartsWith("SQLite")) _dbType = DBType.SQLite;
+            if (_dbType == DBType.NotSet)
+            {
+                _dbType = DBType.SqlServer;
+                string dbtype = (_factory == null ? _sharedConnection.GetType() : _factory.GetType()).Name;
+                if (dbtype.StartsWith("MySql"))
+                    _dbType = DBType.MySql;
+                else if (dbtype.StartsWith("SqlCe"))
+                    _dbType = DBType.SqlServerCE;
+                else if (dbtype.StartsWith("Npgsql"))
+                    _dbType = DBType.PostgreSQL;
+                else if (dbtype.StartsWith("Oracle"))
+                    _dbType = DBType.Oracle;
+                else if (dbtype.StartsWith("SQLite"))
+                    _dbType = DBType.SQLite;
+            }
 
-			if (_dbType == DBType.MySql && _connectionString != null && _connectionString.IndexOf("Allow User Variables=true") >= 0)
+		    if (_dbType == DBType.MySql && _connectionString != null && _connectionString.IndexOf("Allow User Variables=true") >= 0)
 				_paramPrefix = "?";
 			if (_dbType == DBType.Oracle)
 				_paramPrefix = ":";
