@@ -24,6 +24,11 @@ namespace PetaPoco
             return db.FetchManyToOne<T, T1, T2>(key, Sql.SQL, Sql.Arguments);
         }
 
+        public static List<T> FetchManyToOne<T, T1, T2, T3>(this IDatabase db, Func<T, object> key, Sql Sql)
+        {
+            return db.FetchManyToOne<T, T1, T2, T3>(key, Sql.SQL, Sql.Arguments);
+        }
+
         public static List<T> FetchOneToMany<T, T1>(this IDatabase db, Func<T, object> key, string sql, params object[] args)
         {
             var relator = new Relator();
@@ -41,59 +46,36 @@ namespace PetaPoco
             var relator = new Relator();
             return db.Fetch<T, T1, T2, T>((a, b, c) => relator.ManyToOne(a, b, c, key), sql, args);
         }
+
+        public static List<T> FetchManyToOne<T, T1, T2, T3>(this IDatabase db, Func<T, object> key, string sql, params object[] args)
+        {
+            var relator = new Relator();
+            return db.Fetch<T, T1, T2, T3, T>((a, b, c, d) => relator.ManyToOne(a, b, c, d, key), sql, args);
+        }
     }
 
     public class Relator
     {
-        private Dictionary<object, object> onemanytoone = new Dictionary<object, object>();
+        private Dictionary<string, object> existingmanytoone = new Dictionary<string, object>();
+        private List<string> properties = new List<string>();
+        private PropertyInfo property1, property2, property3;
+        
         public T ManyToOne<T, TSub1>(T main, TSub1 sub, Func<T, object> idFunc)
         {
-            if (property1 == null)
-            {
-                property1 = typeof(T).GetProperties().Where(x => typeof(TSub1) == x.PropertyType).FirstOrDefault();
-                if (property1 == null)
-                    ThrowPropertyNotFoundException<T, TSub1>();
-            }
-
-            object aExisting;
-            if (onemanytoone.TryGetValue(idFunc(main), out aExisting))
-                sub = (TSub1)aExisting;
-            else
-                onemanytoone.Add(idFunc(main), sub);
-
+            property1 = GetProperty<T, TSub1>(property1);
+            sub = GetSub(main, sub, idFunc);
             property1.SetValue(main, sub, null);
 
             return main;
         }
 
-        private Dictionary<string, object> twomanytoone = new Dictionary<string, object>();
         public T ManyToOne<T, TSub1, TSub2>(T main, TSub1 sub1, TSub2 sub2, Func<T, object> idFunc)
         {
-            if (property1 == null)
-            {
-                property1 = typeof(T).GetProperties().Where(x => typeof(TSub1) == x.PropertyType).FirstOrDefault();
-                if (property1 == null)
-                    ThrowPropertyNotFoundException<T, TSub1>();
-            }
+            property1 = GetProperty<T, TSub1>(property1);
+            property2 = GetProperty<T, TSub2>(property2);
 
-            if (property2 == null)
-            {
-                property2 = typeof(T).GetProperties().Where(x => typeof(TSub2) == x.PropertyType).FirstOrDefault();
-                if (property2 == null)
-                    ThrowPropertyNotFoundException<T, TSub2>();
-            }
-
-            object aExisting;
-            if (twomanytoone.TryGetValue(idFunc(main) + typeof(TSub1).Name, out aExisting))
-                sub1 = (TSub1)aExisting;
-            else
-                twomanytoone.Add(idFunc(main) + typeof(TSub1).Name, sub1);
-
-            object aExisting2;
-            if (twomanytoone.TryGetValue(idFunc(main) + typeof(TSub2).Name, out aExisting2))
-                sub2 = (TSub2)aExisting2;
-            else
-                twomanytoone.Add(idFunc(main) + typeof(TSub2).Name, sub2);
+            sub1 = GetSub(main, sub1, idFunc);
+            sub2 = GetSub(main, sub2, idFunc);
 
             property1.SetValue(main, sub1, null);
             property2.SetValue(main, sub2, null);
@@ -101,9 +83,51 @@ namespace PetaPoco
             return main;
         }
 
+        public T ManyToOne<T, TSub1, TSub2, TSub3>(T main, TSub1 sub1, TSub2 sub2, TSub3 sub3, Func<T, object> idFunc)
+        {
+            property1 = GetProperty<T, TSub1>(property1);
+            property2 = GetProperty<T, TSub2>(property2);
+            property3 = GetProperty<T, TSub3>(property3);
+
+            sub1 = GetSub(main, sub1, idFunc);
+            sub2 = GetSub(main, sub2, idFunc);
+            sub3 = GetSub(main, sub3, idFunc);
+
+            property1.SetValue(main, sub1, null);
+            property2.SetValue(main, sub2, null);
+            property3.SetValue(main, sub3, null);
+
+            return main;
+        }
+
+        private PropertyInfo GetProperty<T, TSub>(PropertyInfo property)
+        {
+            if (property == null)
+            {
+                property = typeof (T).GetProperties()
+                    .Where(x => typeof (TSub) == x.PropertyType && !properties.Contains(x.Name))
+                    .FirstOrDefault();
+
+                if (property == null)
+                    ThrowPropertyNotFoundException<T, TSub>();
+
+                properties.Add(property.Name);
+            }
+
+            return property;
+        }
+
+        private TSub GetSub<T, TSub>(T main, TSub sub, Func<T, object> idFunc)
+        {
+            object existing;
+            if (existingmanytoone.TryGetValue(idFunc(main) + typeof (TSub).Name, out existing))
+                sub = (TSub) existing;
+            else
+                existingmanytoone.Add(idFunc(main) + typeof(TSub).Name, sub);
+            return sub;
+        }
+
         private object onetomanycurrent;
-        private PropertyInfo property1;
-        private PropertyInfo property2;
         public T OneToMany<T, TSub>(T main, TSub sub, Func<T, object> idFunc)
         {
             if (main == null)
