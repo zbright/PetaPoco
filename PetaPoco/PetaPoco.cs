@@ -1,4 +1,4 @@
-﻿/* PetaPoco v4.0.3 - A Tiny ORMish thing for your POCO's.
+/* PetaPoco v4.0.3 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -158,23 +158,6 @@ namespace PetaPoco
             return null;
         }
     }
-
-    //public class DestinationInfo
-    //{
-    //    public DestinationInfo(Type type)
-    //    {
-    //        Type = type;
-    //    }
-
-    //    public DestinationInfo(PropertyInfo propertyInfo)
-    //    {
-    //        PropertyInfo = propertyInfo;
-    //        Type = propertyInfo.PropertyType;
-    //    }
-
-    //    public PropertyInfo PropertyInfo { get; private set; }
-    //    public Type Type { get; private set; }
-    //}
 
     public interface IDatabaseQuery
     {
@@ -660,13 +643,6 @@ namespace PetaPoco
 
 			return cmd;
 		}
-
-	    // Create a command
-        //IDbCommand CreateCommand(IDbConnection connection, string sql, params object[] args)
-        //{
-        //    var sqlStatement = new Sql(sql, args);
-        //    return CreateCommand(connection, sqlStatement);
-        //}
 
 	    // Override this to log/capture exceptions
 		public virtual void OnException(Exception x)
