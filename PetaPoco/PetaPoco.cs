@@ -2518,12 +2518,22 @@ namespace PetaPoco
 
 		public Sql Append(Sql sql)
 		{
-			if (_rhs != null)
-				_rhs.Append(sql);
-			else
-				_rhs = sql;
+            if (_rhs != null)
+            {
+                _rhs.Append(sql);
+            }
+            else if (_sql != null)
+            {
+                _rhs = sql;
+            }
+            else
+            {
+                _sql = sql._sql;
+                _args = sql._args;
+                _rhs = sql._rhs;
+            }
 
-			return this;
+            return this;
 		}
 
 		public Sql Append(string sql, params object[] args)
