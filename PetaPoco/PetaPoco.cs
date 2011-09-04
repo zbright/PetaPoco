@@ -523,6 +523,10 @@ namespace PetaPoco
                             args_dest.Add(i);
                         }
                     }
+                    if (sb.Length == 0)
+                    {
+                        sb.AppendFormat("select 1 /*peta_dual*/ where 1 = 0");
+                    }
 					return sb.ToString();
 				}
 				else
@@ -634,9 +638,10 @@ namespace PetaPoco
 			}
 
 			if (_dbType == DBType.Oracle)
-			{
 				cmd.GetType().GetProperty("BindByName").SetValue(cmd, true, null);
-			}
+
+            if (_dbType == DBType.Oracle || _dbType == DBType.MySql)
+                cmd.CommandText = cmd.CommandText.Replace("/*peta_dual*/", "from dual");
 
 			if (!String.IsNullOrEmpty(sql))
 				DoPreExecute(cmd);
