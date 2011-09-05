@@ -2625,4 +2625,119 @@ namespace PetaPoco
 		}
 	}
 
+    public class SqlBuilder
+    {
+        Dictionary<string, Clauses> data = new Dictionary<string, Clauses>();
+        int seq;
+
+        class Clause
+        {
+            public string Sql { get; set; }
+            public List<object> Parameters { get; set; }
+        }
+
+        class Clauses : List<Clause>
+        {
+            string joiner;
+            string prefix;
+            string postfix;
+
+            public Clauses(string joiner, string prefix, string postfix)
+            {
+                this.joiner = joiner;
+                this.prefix = prefix;
+                this.postfix = postfix;
+            }
+
+            public string ResolveClauses(List<object> finalParams)
+            {
+                foreach (var item in this)
+                {
+                    item.Sql = Database.ProcessParams(item.Sql, item.Parameters.ToArray(), finalParams);
+                }
+                return prefix + string.Join(joiner, this.Select(c => c.Sql)) + postfix;
+            }
+        }
+
+        public class Template
+        {
+            readonly string sql;
+            readonly SqlBuilder builder;
+            private List<object> finalParams = new List<object>();
+            int dataSeq;
+
+            public Template(SqlBuilder builder, string sql, params object[] parameters)
+            {
+                this.sql = Database.ProcessParams(sql, parameters, finalParams);
+                this.builder = builder;
+            }
+
+            static Regex regex = new Regex(@"\/\*\*.+\*\*\/", RegexOptions.Compiled | RegexOptions.Multiline);
+
+            void ResolveSql()
+            {
+                if (dataSeq != builder.seq)
+                {
+                    rawSql = sql;
+
+                    foreach (var pair in builder.data)
+                    {
+                        rawSql = rawSql.Replace("/**" + pair.Key + "**/", pair.Value.ResolveClauses(finalParams));
+                    }
+
+                    // replace all that is left with empty
+                    rawSql = regex.Replace(rawSql, "");
+
+                    dataSeq = builder.seq;
+                }
+            }
+
+            string rawSql;
+
+            public string RawSql { get { ResolveSql(); return rawSql; } }
+            public object Parameters { get { ResolveSql(); return finalParams; } }
+        }
+
+
+        public SqlBuilder()
+        {
+        }
+
+        public Template AddTemplate(string sql, params object[] parameters)
+        {
+            return new Template(this, sql, parameters);
+        }
+
+        void AddClause(string name, string sql, object[] parameters, string joiner, string prefix, string postfix)
+        {
+            Clauses clauses;
+            if (!data.TryGetValue(name, out clauses))
+            {
+                clauses = new Clauses(joiner, prefix, postfix);
+                data[name] = clauses;
+            }
+            clauses.Add(new Clause { Sql = sql, Parameters = new List<object>(parameters) });
+            seq++;
+        }
+
+
+        public SqlBuilder LeftJoin(string sql, params object[] args)
+        {
+            AddClause("leftjoin", sql, args, "\nLEFT JOIN ", "\nLEFT JOIN ", "\n");
+            return this;
+        }
+
+        public SqlBuilder Where(string sql, params object[] args)
+        {
+            AddClause("where", sql, args, " AND ", "WHERE ( ", " )\n");
+            return this;
+        }
+
+        public SqlBuilder OrderBy(string sql, params object[] args)
+        {
+            AddClause("orderby", sql, args, " , ", "ORDER BY ", "\n");
+            return this;
+        }
+    }
+
 }
