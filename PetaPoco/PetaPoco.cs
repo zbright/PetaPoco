@@ -1,4 +1,4 @@
-/* PetaPoco v4.0.3.1 - A Tiny ORMish thing for your POCO's.
+/* PetaPoco v4.0.3.2 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -2478,12 +2478,23 @@ namespace PetaPoco
 			_args = args;
 		}
 
+        public Sql(bool isBuilt, string sql, params object[] args)
+        {
+            _sql = sql;
+            _args = args;
+            if (isBuilt)
+            {
+                _sqlFinal = _sql;
+                _argsFinal = _args;
+            }
+        }
+
 		public static Sql Builder
 		{
 			get { return new Sql(); }
 		}
 
-		string _sql;
+	    string _sql;
 		object[] _args;
 		Sql _rhs;
 		string _sqlFinal;
@@ -2523,6 +2534,9 @@ namespace PetaPoco
 
 		public Sql Append(Sql sql)
 		{
+            if (_sqlFinal != null)
+                _sqlFinal = null;
+
             if (_rhs != null)
             {
                 _rhs.Append(sql);
@@ -2655,7 +2669,7 @@ namespace PetaPoco
                 {
                     item.Sql = Database.ProcessParams(item.Sql, item.Parameters.ToArray(), finalParams);
                 }
-                return prefix + string.Join(joiner, this.Select(c => c.Sql)) + postfix;
+                return prefix + string.Join(joiner, this.Select(c => c.Sql).ToArray()) + postfix;
             }
         }
 
@@ -2676,26 +2690,41 @@ namespace PetaPoco
 
             void ResolveSql()
             {
+                rawSql = sql;
+
                 if (dataSeq != builder.seq)
                 {
-                    rawSql = sql;
-
                     foreach (var pair in builder.data)
                     {
                         rawSql = rawSql.Replace("/**" + pair.Key + "**/", pair.Value.ResolveClauses(finalParams));
                     }
 
-                    // replace all that is left with empty
-                    rawSql = regex.Replace(rawSql, "");
+                    ReplaceDefaults();
 
                     dataSeq = builder.seq;
                 }
+
+                if (builder.seq == 0)
+                {
+                    ReplaceDefaults();
+                }
+            }
+
+            private void ReplaceDefaults()
+            {
+                foreach (var pair in builder.defaultsIfEmpty)
+                {
+                    rawSql = rawSql.Replace("/**" + pair.Key + "**/", " " + pair.Value + " ");
+                }
+
+                // replace all that is left with empty
+                rawSql = regex.Replace(rawSql, "");
             }
 
             string rawSql;
 
             public string RawSql { get { ResolveSql(); return rawSql; } }
-            public object Parameters { get { ResolveSql(); return finalParams; } }
+            public object[] Parameters { get { ResolveSql(); return finalParams.ToArray(); } }
         }
 
 
@@ -2720,6 +2749,22 @@ namespace PetaPoco
             seq++;
         }
 
+        Dictionary<string, string> defaultsIfEmpty = new Dictionary<string, string>
+        {
+            { "where", "1=1" },
+        };
+
+        public SqlBuilder SelectCols(params string[] columns)
+        {
+            AddClause("selectcols", string.Join(", ", columns), new object[] { }, ", ", ", ", "");
+            return this;
+        }
+
+        public SqlBuilder InnerJoin(string sql, params object[] args)
+        {
+            AddClause("innerjoin", sql, args, "\nINNER JOIN ", "\nINNER JOIN ", "\n");
+            return this;
+        }
 
         public SqlBuilder LeftJoin(string sql, params object[] args)
         {
@@ -2729,14 +2774,28 @@ namespace PetaPoco
 
         public SqlBuilder Where(string sql, params object[] args)
         {
-            AddClause("where", sql, args, " AND ", "WHERE ( ", " )\n");
+            AddClause("where", sql, args, " AND ", " ( ", " )\n");
             return this;
         }
 
         public SqlBuilder OrderBy(string sql, params object[] args)
         {
-            AddClause("orderby", sql, args, " , ", "ORDER BY ", "\n");
+            AddClause("orderby", sql, args, ", ", "ORDER BY ", "\n");
             return this;
+        }
+
+        public SqlBuilder OrderByCols(params string[] columns)
+        {
+            AddClause("orderbycols", string.Join(", ", columns), new object[] { }, ", ", ", ", "");
+            return this;
+        }
+    }
+
+    public static class SqlExtensions
+    {
+        public static Sql ToSql(this SqlBuilder.Template template)
+        {
+            return new Sql(true, template.RawSql, template.Parameters);
         }
     }
 
