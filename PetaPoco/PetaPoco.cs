@@ -206,13 +206,21 @@ namespace PetaPoco
         T Single<T>(object primaryKey);
         T SingleOrDefault<T>(object primaryKey);
         T Single<T>(string sql, params object[] args);
+        T Single<T>(T instance, string sql, params object[] args);
         T SingleOrDefault<T>(string sql, params object[] args);
+        T SingleOrDefault<T>(T instance, string sql, params object[] args);
         T First<T>(string sql, params object[] args);
+        T First<T>(T instance, string sql, params object[] args);
         T FirstOrDefault<T>(string sql, params object[] args);
+        T FirstOrDefault<T>(T instance, string sql, params object[] args);
         T Single<T>(Sql sql);
+        T Single<T>(T instance, Sql sql);
         T SingleOrDefault<T>(Sql sql);
+        T SingleOrDefault<T>(T instance, Sql sql);
         T First<T>(Sql sql);
+        T First<T>(T instance, Sql sql);
         T FirstOrDefault<T>(Sql sql);
+        T FirstOrDefault<T>(T instance, Sql sql);
         bool Exists<T>(object primaryKey);
         int OneTimeCommandTimeout { get; set; }
     }
@@ -941,7 +949,12 @@ namespace PetaPoco
             return Query<T>(new Sql(sql, args));
         }
 
-        public IEnumerable<T> Query<T>(Sql Sql) 
+        public IEnumerable<T> Query<T>(Sql Sql)
+        {
+            return Query<T>(default(T), Sql);
+        }
+
+        private IEnumerable<T> Query<T>(T instance, Sql Sql) 
 		{
             var sql = Sql.SQL;
             var args = Sql.Arguments;
@@ -969,7 +982,7 @@ namespace PetaPoco
 					
                     using (r)
                     {
-                        var factory = pd.GetFactory(cmd.CommandText, _sharedConnection.ConnectionString, ForceDateTimesToUtc, 0, r.FieldCount, r) as Func<IDataReader, T>;
+                        var factory = pd.GetFactory(cmd.CommandText, _sharedConnection.ConnectionString, ForceDateTimesToUtc, 0, r.FieldCount, r, instance) as Func<IDataReader, T, T>;
                         while (true)
                         {
                             T poco;
@@ -977,7 +990,7 @@ namespace PetaPoco
                             {
                                 if (!r.Read())
                                     yield break;
-                                poco = factory(r);
+                                poco = factory(r, instance);
                             }
                             catch (Exception x)
                             {
@@ -1116,7 +1129,7 @@ namespace PetaPoco
 		{
 			// Last?
 			if (typeNext == null)
-				return PocoData.ForType(typeThis).GetFactory(sql, _sharedConnection.ConnectionString, ForceDateTimesToUtc, pos, r.FieldCount - pos, r);
+				return PocoData.ForType(typeThis).GetFactory(sql, _sharedConnection.ConnectionString, ForceDateTimesToUtc, pos, r.FieldCount - pos, r, null);
 
 			// Get PocoData for the two types
 			PocoData pdThis = PocoData.ForType(typeThis);
@@ -1131,7 +1144,7 @@ namespace PetaPoco
 				string fieldName = r.GetName(pos);
 				if (usedColumns.ContainsKey(fieldName) || (!pdThis.Columns.ContainsKey(fieldName) && pdNext.Columns.ContainsKey(fieldName)))
 				{
-					return pdThis.GetFactory(sql, _sharedConnection.ConnectionString, ForceDateTimesToUtc, firstColumn, pos - firstColumn, r);
+					return pdThis.GetFactory(sql, _sharedConnection.ConnectionString, ForceDateTimesToUtc, firstColumn, pos - firstColumn, r, null);
 				}
 				usedColumns.Add(fieldName, true);
 			}
@@ -1169,6 +1182,7 @@ namespace PetaPoco
 				il.Emit(OpCodes.Ldc_I4, i);													// callback,this,Index
 				il.Emit(OpCodes.Callvirt, typeof(MultiPocoFactory).GetMethod("GetItem"));	// callback,Delegate
 				il.Emit(OpCodes.Ldarg_1);													// callback,delegate, datareader
+                il.Emit(OpCodes.Ldnull);
 
 				// Call Invoke
 				var tDelInvoke = del.GetType().GetMethod("Invoke");
@@ -1324,35 +1338,66 @@ namespace PetaPoco
 		{
 			return Query<T>(sql, args).Single();
 		}
+        public T Single<T>(T instance, string sql, params object[] args)
+        {
+            return Query<T>(instance, new Sql(sql, args)).Single();
+        }
 		public T SingleOrDefault<T>(string sql, params object[] args) 
 		{
 			return Query<T>(sql, args).SingleOrDefault();
 		}
+        public T SingleOrDefault<T>(T instance, string sql, params object[] args)
+        {
+            return Query<T>(instance, new Sql(sql, args)).SingleOrDefault();
+        }
 		public T First<T>(string sql, params object[] args) 
 		{
 			return Query<T>(sql, args).First();
 		}
+        public T First<T>(T instance, string sql, params object[] args)
+        {
+            return Query<T>(instance, new Sql(sql, args)).First();
+        }
 		public T FirstOrDefault<T>(string sql, params object[] args) 
 		{
 			return Query<T>(sql, args).FirstOrDefault();
 		}
+        public T FirstOrDefault<T>(T instance, string sql, params object[] args)
+        {
+            return Query<T>(instance, new Sql(sql, args)).FirstOrDefault();
+        }
 		public T Single<T>(Sql sql) 
 		{
             return Query<T>(sql).Single();
 		}
+        public T Single<T>(T instance, Sql sql)
+        {
+            return Query<T>(instance, sql).Single();
+        }
 		public T SingleOrDefault<T>(Sql sql) 
 		{
 			return Query<T>(sql).SingleOrDefault();
 		}
+        public T SingleOrDefault<T>(T instance, Sql sql)
+        {
+            return Query<T>(instance, sql).SingleOrDefault();
+        }
 		public T First<T>(Sql sql) 
 		{
 			return Query<T>(sql).First();
 		}
+        public T First<T>(T instance, Sql sql)
+        {
+            return Query<T>(instance, sql).First();
+        }
 		public T FirstOrDefault<T>(Sql sql) 
 		{
 			return Query<T>(sql).FirstOrDefault();
 		}
-
+        public T FirstOrDefault<T>(T instance, Sql sql)
+        {
+            return Query<T>(instance, sql).FirstOrDefault();
+        }
 		public string EscapeTableName(string str)
 		{
 			// Assume table names with "dot" are already escaped
@@ -2096,11 +2141,20 @@ namespace PetaPoco
                 return tc >= TypeCode.SByte && tc <= TypeCode.UInt64;
             }
 
+            static object GetDefault(Type type)
+            {
+                if (type.IsValueType)
+                {
+                    return Activator.CreateInstance(type);
+                }
+                return null;
+            }
+
             // Create factory function that can convert a IDataReader record into a POCO
-			public Delegate GetFactory(string sql, string connString, bool ForceDateTimesToUtc, int firstColumn, int countColumns, IDataReader r)
+			public Delegate GetFactory(string sql, string connString, bool ForceDateTimesToUtc, int firstColumn, int countColumns, IDataReader r, object instance)
             {
 				// Check cache
-				var key = string.Format("{0}:{1}:{2}:{3}:{4}", sql, connString, ForceDateTimesToUtc, firstColumn, countColumns);
+                var key = string.Format("{0}:{1}:{2}:{3}:{4}:{5}", sql, connString, ForceDateTimesToUtc, firstColumn, countColumns, instance != GetDefault(type));
 				RWLock.EnterReadLock();
 				try
                 {
@@ -2119,14 +2173,13 @@ namespace PetaPoco
 
 				try
                 {
-
-                	// Check again, just in case
+                    // Check again, just in case
 					Delegate factory;
 					if (PocoFactories.TryGetValue(key, out factory))
 						return factory;
-					
+			
                     // Create the method
-                    var m = new DynamicMethod("petapoco_factory_" + PocoFactories.Count.ToString(), type, new Type[] { typeof(IDataReader) }, true);
+                    var m = new DynamicMethod("petapoco_factory_" + PocoFactories.Count.ToString(), type, new Type[] { typeof(IDataReader), type }, true);
 					var il = m.GetILGenerator();
 
 #if !PETAPOCO_NO_DYNAMIC
@@ -2234,14 +2287,18 @@ namespace PetaPoco
                                 return dict;
                             };
 
-                            var localDel = Delegate.CreateDelegate(typeof(Func<IDataReader, Dictionary<string, object>>), func.Target, func.Method);
+                            var delegateType = typeof(Func<,,>).MakeGenericType(typeof(IDataReader), type, typeof(Dictionary<string, object>));
+                            var localDel = Delegate.CreateDelegate(delegateType, func.Target, func.Method);
                             PocoFactories.Add(key, localDel);
                             return localDel;
                         }
 						else
 						{
-							// var poco=new T()
-							il.Emit(OpCodes.Newobj, type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new Type[0], null));
+                            if (instance != null)
+                                 il.Emit(OpCodes.Ldarg_1);
+                            else
+                                // var poco=new T()
+                                il.Emit(OpCodes.Newobj, type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new Type[0], null));
 
 							// Enumerate all fields generating a set assignment for the column
 							for (int i = firstColumn; i < firstColumn + countColumns; i++)
@@ -2327,7 +2384,7 @@ namespace PetaPoco
 					il.Emit(OpCodes.Ret);
 
 					// Cache it, return it
-                    var del = m.CreateDelegate(Expression.GetFuncType(typeof(IDataReader), type));
+                    var del = m.CreateDelegate(Expression.GetFuncType(typeof(IDataReader), type, type));
                     PocoFactories.Add(key, del);
                     return del;
                 }
