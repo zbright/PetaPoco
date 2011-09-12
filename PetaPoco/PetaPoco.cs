@@ -323,7 +323,7 @@ namespace PetaPoco
             SQLite
 		}
 
-        private DBType _dbType = DBType.NotSet;
+        protected DBType _dbType = DBType.NotSet;
 
 		// Common initialization
 		private void CommonConstruct()
@@ -1182,7 +1182,7 @@ namespace PetaPoco
 				il.Emit(OpCodes.Ldc_I4, i);													// callback,this,Index
 				il.Emit(OpCodes.Callvirt, typeof(MultiPocoFactory).GetMethod("GetItem"));	// callback,Delegate
 				il.Emit(OpCodes.Ldarg_1);													// callback,delegate, datareader
-                il.Emit(OpCodes.Ldnull);
+                il.Emit(OpCodes.Ldnull);                                                    // callback,delegate, datareader,null
 
 				// Call Invoke
 				var tDelInvoke = del.GetType().GetMethod("Invoke");
