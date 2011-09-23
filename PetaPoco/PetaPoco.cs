@@ -411,7 +411,7 @@ namespace PetaPoco
 
         public IDataParameter CreateParameter()
         {
-            using (var conn = _factory.CreateConnection())
+            using (var conn = _sharedConnection ?? _factory.CreateConnection())
             using (var comm = conn.CreateCommand())
                 return comm.CreateParameter();
         }
