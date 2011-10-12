@@ -1700,8 +1700,11 @@ namespace PetaPoco
 
 						DoPreExecute(cmd);
 
-						// Do it
 						var result = cmd.ExecuteNonQuery();
+
+                        if (result == 0 && !string.IsNullOrEmpty(versionName) && VersionException == VersionExceptionHandling.Exception)
+                            throw new DBConcurrencyException(string.Format("A Concurrency update occured in table '{0}' for primary key value(s) = '{1}' and version = '{2}'", tableName, string.Join(",", primaryKeyValuePairs.Values.Select(x=>x.ToString()).ToArray()), versionValue));
+
                         OnExecutedCommand(cmd);
 
                         // Set Version
@@ -1709,9 +1712,6 @@ namespace PetaPoco
                             PocoColumn pc;
                             if (pd.Columns.TryGetValue(versionName, out pc))
                             {
-                                if (result == 0 && VersionException == VersionExceptionHandling.Exception)
-                                    throw new DBConcurrencyException("Possible Concurrency Exception: 0 rows were updated");
-
                                 pc.PropertyInfo.SetValue(poco, Convert.ChangeType(Convert.ToInt64(versionValue)+1, pc.PropertyInfo.PropertyType), null);
                             }
                         }
