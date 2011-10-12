@@ -1,5 +1,5 @@
 /* PetaPoco v4.0.3.2 - A Tiny ORMish thing for your POCO's.
- * Copyright Â© 2011 Topten Software.  All Rights Reserved.
+ * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
  * 
@@ -22,7 +22,6 @@ using System.Text.RegularExpressions;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Linq.Expressions;
-
 
 namespace PetaPoco
 {
@@ -402,6 +401,12 @@ namespace PetaPoco
 				}
 		    }
 		}
+
+        public VersionExceptionHandling VersionException
+        {
+            get { return _versionException; }
+            set { _versionException = value; }
+        }
 
 		// Access to our shared connection
 		public IDbConnection Connection
@@ -1704,6 +1709,9 @@ namespace PetaPoco
                             PocoColumn pc;
                             if (pd.Columns.TryGetValue(versionName, out pc))
                             {
+                                if (result == 0 && VersionException == VersionExceptionHandling.Exception)
+                                    throw new DBConcurrencyException("Possible Concurrency Exception: 0 rows were updated");
+
                                 pc.PropertyInfo.SetValue(poco, Convert.ChangeType(Convert.ToInt64(versionValue)+1, pc.PropertyInfo.PropertyType), null);
                             }
                         }
@@ -1978,13 +1986,18 @@ namespace PetaPoco
 			return sb.ToString();
 		}
 
+        public enum VersionExceptionHandling
+        {
+            Ignore,
+            Exception
+        }
 
 		public static IMapper Mapper
 		{
 			get;
 			set;
 		}
-
+        
 		public class PocoColumn
 		{
 			public string ColumnName;
@@ -2522,6 +2535,7 @@ namespace PetaPoco
 		string _lastSql;
 		object[] _lastArgs;
 		string _paramPrefix = "@";
+        VersionExceptionHandling _versionException = VersionExceptionHandling.Ignore;
 	}
 
 	// Transaction object helps maintain transaction depth counts
