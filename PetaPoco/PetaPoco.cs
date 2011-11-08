@@ -1,4 +1,4 @@
-/* PetaPoco v4.0.3.2 - A Tiny ORMish thing for your POCO's.
+/* PetaPoco v4.0.3.3 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -224,6 +224,19 @@ namespace PetaPoco
         Dictionary<TKey, TValue> Dictionary<TKey, TValue>(string sql, params object[] args);
         bool Exists<T>(object primaryKey);
         int OneTimeCommandTimeout { get; set; }
+
+        TRet FetchMultiple<T1, T2, TRet>(Func<List<T1>, List<T2>, TRet> cb, string sql, params object[] args);
+        TRet FetchMultiple<T1, T2, T3, TRet>(Func<List<T1>, List<T2>, List<T3>, TRet> cb, string sql, params object[] args);
+        TRet FetchMultiple<T1, T2, T3, T4, TRet>(Func<List<T1>, List<T2>, List<T3>, List<T4>, TRet> cb, string sql, params object[] args);
+#if PETAPOCO_NO_DYNAMIC
+        IEnumerable<object> FetchMultiple<T1, T2>(string sql, params object[] args);
+        IEnumerable<object> FetchMultiple<T1, T2, T3>(string sql, params object[] args);
+        IEnumerable<object> FetchMultiple<T1, T2, T3, T4>(string sql, params object[] args);
+#else
+        Tuple<List<T1>, List<T2>> FetchMultiple<T1, T2>(string sql, params object[] args);
+        Tuple<List<T1>, List<T2>, List<T3>> FetchMultiple<T1, T2, T3>(string sql, params object[] args);
+        Tuple<List<T1>, List<T2>, List<T3>, List<T4>> FetchMultiple<T1, T2, T3, T4>(string sql, params object[] args);
+#endif
     }
 
     public interface IDatabase : IDatabaseQuery
@@ -1330,6 +1343,108 @@ namespace PetaPoco
 				CloseSharedConnection();
 			}
 		}
+
+        public TRet FetchMultiple<T1, T2, TRet>(Func<List<T1>, List<T2>, TRet> cb, string sql, params object[] args) { return FetchMultiple<T1, T2, T2, T2, TRet>(new[] { typeof(T1), typeof(T2) }, cb, sql, args); }
+        public TRet FetchMultiple<T1, T2, T3, TRet>(Func<List<T1>, List<T2>, List<T3>, TRet> cb, string sql, params object[] args) { return FetchMultiple<T1, T2, T3, T3, TRet>(new[] { typeof(T1), typeof(T2), typeof(T3) }, cb, sql, args); }
+        public TRet FetchMultiple<T1, T2, T3, T4, TRet>(Func<List<T1>, List<T2>, List<T3>, List<T4>, TRet> cb, string sql, params object[] args) { return FetchMultiple<T1, T2, T3, T4, TRet>(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, cb, sql, args); }
+
+#if PETAPOCO_NO_DYNAMIC
+        public IEnumerable<object> FetchMultiple<T1, T2>(string sql, params object[] args) { return FetchMultiple<T1, T2, T2, T2, List<object>>(new[] { typeof(T1), typeof(T2) }, new Func<List<T1>, List<T2>, List<object>>((y, z) => new List<object> { y, z }), sql, args); }
+        public IEnumerable<object> FetchMultiple<T1, T2, T3>(string sql, params object[] args) { return FetchMultiple<T1, T2, T3, T3, List<object>>(new[] { typeof(T1), typeof(T2), typeof(T3) }, new Func<List<T1>, List<T2>, List<T3>, List<object>>((x, y, z) => new List<object> { x, y, z }), sql, args); }
+        public IEnumerable<object> FetchMultiple<T1, T2, T3, T4>(string sql, params object[] args) { return FetchMultiple<T1, T2, T3, T4, List<object>>(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, new Func<List<T1>, List<T2>, List<T3>, List<T4>, List<object>>((w, x, y, z) => new List<object> { w, x, y, z }), sql, args); }
+#else
+        public Tuple<List<T1>, List<T2>> FetchMultiple<T1, T2>(string sql, params object[] args) { return FetchMultiple<T1, T2, T2, T2, Tuple<List<T1>, List<T2>>>(new[] { typeof(T1), typeof(T2) }, new Func<List<T1>, List<T2>, Tuple<List<T1>, List<T2>>>((y, z) => new Tuple<List<T1>, List<T2>>(y, z)), sql, args); }
+        public Tuple<List<T1>, List<T2>, List<T3>> FetchMultiple<T1, T2, T3>(string sql, params object[] args) { return FetchMultiple<T1, T2, T3, T3, Tuple<List<T1>, List<T2>, List<T3>>>(new[] { typeof(T1), typeof(T2), typeof(T3) }, new Func<List<T1>, List<T2>, List<T3>, Tuple<List<T1>, List<T2>, List<T3>>>((x, y, z) => new Tuple<List<T1>, List<T2>, List<T3>>(x, y, z)), sql, args); }
+        public Tuple<List<T1>, List<T2>, List<T3>, List<T4>> FetchMultiple<T1, T2, T3, T4>(string sql, params object[] args) { return FetchMultiple<T1, T2, T3, T4, Tuple<List<T1>, List<T2>, List<T3>, List<T4>>>(new[] { typeof(T1), typeof(T2), typeof(T3), typeof(T4) }, new Func<List<T1>, List<T2>, List<T3>, List<T4>, Tuple<List<T1>, List<T2>, List<T3>, List<T4>>>((w, x, y, z) => new Tuple<List<T1>, List<T2>, List<T3>, List<T4>>(w, x, y, z)), sql, args); }
+#endif
+
+        // Actual implementation of the multi query
+        private TRet FetchMultiple<T1, T2, T3, T4, TRet>(Type[] types, object cb, string sql, params object[] args)
+        {
+            OpenSharedConnection();
+            try
+            {
+                using (var cmd = CreateCommand(_sharedConnection, sql, args))
+                {
+                    IDataReader r;
+                    try
+                    {
+                        r = cmd.ExecuteReader();
+                        OnExecutedCommand(cmd);
+                    }
+                    catch (Exception x)
+                    {
+                        OnException(x);
+                        throw;
+                    }
+
+                    using (r)
+                    {
+                        var typeIndex = 1;
+                        var list1 = new List<T1>();
+                        var list2 = new List<T2>();
+                        var list3 = new List<T3>();
+                        var list4 = new List<T4>();
+                        do
+                        {
+                         	if (typeIndex > types.Length)
+                            	break;
+                            
+                            var pd = PocoData.ForType(types[typeIndex-1]);
+                            var factory = pd.GetFactory(cmd.CommandText, _sharedConnection.ConnectionString, ForceDateTimesToUtc, 0, r.FieldCount, r, null);
+                            
+                            while (true)
+                            {
+                                try
+                                {
+                                    if (!r.Read())
+                                        break;
+
+                                    switch (typeIndex)
+                                    {
+                                        case 1:
+                                            list1.Add(((Func<IDataReader, T1, T1>)factory)(r, default(T1)));
+                                            break;
+                                        case 2:
+                                            list2.Add(((Func<IDataReader, T2, T2>)factory)(r, default(T2)));
+                                            break;
+                                        case 3:
+                                            list3.Add(((Func<IDataReader, T3, T3>)factory)(r, default(T3)));
+                                            break;
+                                        case 4:
+                                            list4.Add(((Func<IDataReader, T4, T4>)factory)(r, default(T4)));
+                                            break;
+                                    }
+                                }
+                                catch (Exception x)
+                                {
+                                    OnException(x);
+                                    throw;
+                                }
+                            }
+
+                            typeIndex++;
+                        } while (r.NextResult());
+
+                        switch (types.Length)
+                        {
+                            case 2:
+                                return ((Func<List<T1>, List<T2>, TRet>)cb)(list1, list2);
+                            case 3:
+                                return ((Func<List<T1>, List<T2>, List<T3>, TRet>)cb)(list1, list2, list3);
+                            case 4:
+                                return ((Func<List<T1>, List<T2>, List<T3>, List<T4>, TRet>)cb)(list1, list2, list3, list4);
+                        }
+
+                        return default(TRet);
+                    }
+                }
+            }
+            finally
+            {
+                CloseSharedConnection();
+            }
+        }
 
 		public bool Exists<T>(object primaryKey) 
 		{
