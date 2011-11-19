@@ -2181,6 +2181,8 @@ namespace PetaPoco
 			}
 			public override object ChangeType(object val) { return val; }
 		}
+
+        public static Func<Type, PocoData> PocoDataFactory = type => new PocoData(type);
 		public class PocoData
         {
 			public static PocoData ForObject(object o, string primaryKeyName)
@@ -2236,7 +2238,7 @@ namespace PetaPoco
 						return pd;
 
 					// Create it
-					pd = new PocoData(t);
+					pd = PocoDataFactory(t);
                     m_PocoDatas.Add(t, pd);
 				}
                 finally
@@ -2244,7 +2246,7 @@ namespace PetaPoco
 					RWLock.ExitWriteLock();
 				}
 
-                 return pd;
+                return pd;
 			}
 
 			public PocoData()
@@ -2679,9 +2681,9 @@ namespace PetaPoco
 			static MethodInfo fnListGetItem = typeof(List<Func<object, object>>).GetProperty("Item").GetGetMethod();
 			static MethodInfo fnInvoke = typeof(Func<object, object>).GetMethod("Invoke");
 			public Type type;
-			public string[] QueryColumns { get; private set; }
-			public TableInfo TableInfo { get; private set; }
-			public Dictionary<string, PocoColumn> Columns { get; private set; }
+            public string[] QueryColumns { get; protected set; }
+			public TableInfo TableInfo { get; protected set; }
+            public Dictionary<string, PocoColumn> Columns { get; protected set; }
 			Dictionary<string, Delegate> PocoFactories = new Dictionary<string, Delegate>();
 		}
 
