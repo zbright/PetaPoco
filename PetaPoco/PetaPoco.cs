@@ -1,4 +1,4 @@
-/* PetaPoco v4.0.3.5 - A Tiny ORMish thing for your POCO's.
+/* PetaPoco v4.0.3.6 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -1897,7 +1897,7 @@ namespace PetaPoco
         {
             var tempIndex = index;
             index += primaryKeyValuePair.Count;
-            return string.Join(" AND ", primaryKeyValuePair.Select((x, i) => string.Format("{0} = {1}{2}", EscapeSqlIdentifier(x.Key), _paramPrefix, tempIndex + i)).ToArray());
+            return string.Join(" AND ", primaryKeyValuePair.Select((x, i) => string.Format("{0} = @{1}", EscapeSqlIdentifier(x.Key), tempIndex + i)).ToArray());
         }
 
         private Dictionary<string, object> GetPrimaryKeyValues(string primaryKeyName, object primaryKeyValue) 
