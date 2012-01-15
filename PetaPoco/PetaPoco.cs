@@ -3110,44 +3110,57 @@ namespace PetaPoco
             seq++;
         }
 
-        Dictionary<string, string> defaultsIfEmpty = new Dictionary<string, string>
+        readonly Dictionary<string, string> defaultsIfEmpty = new Dictionary<string, string>
         {
             { "where", "1=1" },
+            { "select", "1" }
         };
 
-        public SqlBuilder SelectCols(params string[] columns)
+        public SqlBuilder Select(params string[] columns)
         {
-            AddClause("selectcols", string.Join(", ", columns), new object[] { }, ", ", ", ", "");
+            AddClause("select", string.Join(", ", columns), new object[] { }, ", ", "", "");
             return this;
         }
 
-        public SqlBuilder InnerJoin(string sql, params object[] args)
+        public SqlBuilder Join(string sql, params object[] parameters)
         {
-            AddClause("innerjoin", sql, args, "\nINNER JOIN ", "\nINNER JOIN ", "\n");
+            AddClause("join", sql, parameters, "\nINNER JOIN ", "\nINNER JOIN ", "\n");
             return this;
         }
 
-        public SqlBuilder LeftJoin(string sql, params object[] args)
+        public SqlBuilder LeftJoin(string sql, params object[] parameters)
         {
-            AddClause("leftjoin", sql, args, "\nLEFT JOIN ", "\nLEFT JOIN ", "\n");
+            AddClause("leftjoin", sql, parameters, "\nLEFT JOIN ", "\nLEFT JOIN ", "\n");
             return this;
         }
 
-        public SqlBuilder Where(string sql, params object[] args)
+        public SqlBuilder Where(string sql, params object[] parameters)
         {
-            AddClause("where", sql, args, " AND ", " ( ", " )\n");
+            AddClause("where", sql, parameters, " AND ", " ( ", " )\n");
             return this;
         }
 
-        public SqlBuilder OrderBy(string sql, params object[] args)
+        public SqlBuilder OrderBy(string sql, params object[] parameters)
         {
-            AddClause("orderby", sql, args, ", ", "ORDER BY ", "\n");
+            AddClause("orderby", sql, parameters, ", ", "ORDER BY ", "\n");
             return this;
         }
 
         public SqlBuilder OrderByCols(params string[] columns)
         {
             AddClause("orderbycols", string.Join(", ", columns), new object[] { }, ", ", ", ", "");
+            return this;
+        }
+
+        public SqlBuilder GroupBy(string sql, params object[] parameters)
+        {
+            AddClause("groupby", sql, parameters, " , ", "\nGROUP BY ", "\n");
+            return this;
+        }
+
+        public SqlBuilder Having(string sql, params object[] parameters)
+        {
+            AddClause("having", sql, parameters, "\nAND ", "HAVING ", "\n");
             return this;
         }
     }
