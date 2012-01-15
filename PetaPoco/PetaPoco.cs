@@ -22,6 +22,7 @@ using System.Text.RegularExpressions;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Linq.Expressions;
+using System.Threading;
 
 namespace PetaPoco
 {
@@ -399,7 +400,11 @@ namespace PetaPoco
 			{
 				_sharedConnection = _factory.CreateConnection();
 				_sharedConnection.ConnectionString = _connectionString;
-				_sharedConnection.Open();
+
+                if (_sharedConnection.State == ConnectionState.Broken)
+                    _sharedConnection.Close();
+                if (_sharedConnection.State == ConnectionState.Closed)
+                    _sharedConnection.Open();
 
 				_sharedConnection = OnConnectionOpened(_sharedConnection);
 
@@ -817,13 +822,14 @@ namespace PetaPoco
         }
 
 		static Regex rxColumns = new Regex(@"\A\s*SELECT\s+((?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|.)*?)(?<!,\s+)\bFROM\b", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
-		static Regex rxOrderBy = new Regex(@"\bORDER\s+BY\s+(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?(?:\s*,\s*(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?)*", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
+        static Regex rxOrderBy = new Regex(@"\bORDER\s+BY\s+(?!.*?(?:\)|\s+)AS\s)(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?(?:\s*,\s*(?:\((?>\((?<depth>)|\)(?<-depth>)|.?)*(?(depth)(?!))\)|[\w\(\)\.])+(?:\s+(?:ASC|DESC))?)*", RegexOptions.RightToLeft | RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
 		static Regex rxDistinct = new Regex(@"\ADISTINCT\s", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline | RegexOptions.Compiled);
-		public static bool SplitSqlForPaging(string sql, out string sqlCount, out string sqlSelectRemoved, out string sqlOrderBy)
+		public static bool SplitSqlForPaging(string sql, out string sqlCount, out string sqlSelectRemoved, out string sqlOrderBy, out string sqlColumns)
         {
             sqlSelectRemoved = null;
             sqlCount = null;
             sqlOrderBy = null;
+		    sqlColumns = null;
 
             // Extract the columns from "SELECT <whatever> FROM"
             var m = rxColumns.Match(sql);
@@ -833,12 +839,12 @@ namespace PetaPoco
             // Save column list and replace with COUNT(*)
             Group g = m.Groups[1];
             sqlSelectRemoved = sql.Substring(g.Index);
+            sqlColumns = g.Value;
 
 			if (rxDistinct.IsMatch(sqlSelectRemoved))
 				sqlCount = sql.Substring(0, g.Index) + "COUNT(" + m.Groups[1].ToString().Trim() + ") " + sql.Substring(g.Index + g.Length);
 			else
 				sqlCount = sql.Substring(0, g.Index) + "COUNT(*) " + sql.Substring(g.Index + g.Length);
-
 
 			// Look for an "ORDER BY <whatever>" clause
             m = rxOrderBy.Match(sqlCount);
@@ -858,8 +864,8 @@ namespace PetaPoco
 			sql=AddSelectClause<T>(sql);
 
 			// Split the SQL into the bits we need
-			string sqlSelectRemoved, sqlOrderBy;
-            if (!SplitSqlForPaging(sql, out sqlCount, out sqlSelectRemoved, out sqlOrderBy))
+			string sqlSelectRemoved, sqlOrderBy, sqlColumns;
+            if (!SplitSqlForPaging(sql, out sqlCount, out sqlSelectRemoved, out sqlOrderBy, out sqlColumns))
 				throw new Exception("Unable to parse SQL statement for paged query");
 			if (_dbType == DBType.Oracle && sqlSelectRemoved.StartsWith("*"))
                 throw new Exception("Query must alias '*' when performing a paged query.\neg. select t.* from table t order by t.id");
@@ -872,8 +878,8 @@ namespace PetaPoco
 				{
 					sqlSelectRemoved = "peta_inner.* FROM (SELECT " + sqlSelectRemoved + ") peta_inner";
 				}
-				sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) peta_rn, {1}) peta_paged WHERE peta_rn>@{2} AND peta_rn<=@{3}",
-										sqlOrderBy==null ? "ORDER BY (SELECT NULL)" : sqlOrderBy, sqlSelectRemoved, args.Length, args.Length + 1);
+                sqlPage = string.Format("SELECT {4} FROM (SELECT ROW_NUMBER() OVER ({0}) peta_rn, {1}) peta_paged WHERE peta_rn>@{2} AND peta_rn<=@{3}",
+										sqlOrderBy==null ? "ORDER BY (SELECT NULL)" : sqlOrderBy, sqlSelectRemoved, args.Length, args.Length + 1, sqlColumns);
 				args = args.Concat(new object[] { skip, skip+take }).ToArray();
             }
             else if (_dbType == DBType.SqlServerCE)
@@ -2050,13 +2056,15 @@ namespace PetaPoco
 			{
 				// Common primary key types
 				if (type == typeof(long))
-					return (long)pk == 0;
+					return (long)pk == default(long);
 				else if (type == typeof(ulong))
-					return (ulong)pk == 0;
+                    return (ulong)pk == default(ulong);
 				else if (type == typeof(int))
-					return (int)pk == 0;
+                    return (int)pk == default(int);
 				else if (type == typeof(uint))
-					return (uint)pk == 0;
+                    return (uint)pk == default(uint);
+                else if (type == typeof(Guid))
+                    return (Guid)pk == default(Guid);
 
 				// Create a default instance and compare
 				return pk == Activator.CreateInstance(pk.GetType());
@@ -2185,6 +2193,8 @@ namespace PetaPoco
         public static Func<Type, PocoData> PocoDataFactory = type => new PocoData(type);
 		public class PocoData
         {
+            static readonly EnumMapper EnumMapper = new EnumMapper();
+
 			public static PocoData ForObject(object o, string primaryKeyName)
 			{
 				var t = o.GetType();
@@ -2648,12 +2658,19 @@ namespace PetaPoco
 					{
 						if (srcType != typeof(int))
 						{
-							converter = delegate(object src) { return Convert.ChangeType(src, typeof(int), null); };
+							converter = src => Convert.ChangeType(src, typeof (int), null);
 						}
 					}
 					else if (!dstType.IsAssignableFrom(srcType))
 					{
-						converter = delegate(object src) { return Convert.ChangeType(src, dstType, null); };
+                        if (dstType.IsEnum && srcType == typeof(string))
+                        {
+                            converter = src => EnumMapper.EnumFromString(dstType, (string) src);
+                        }
+                        else
+                        {
+                            converter = src => Convert.ChangeType(src, dstType, null);
+                        }
 					}
 				}
 				return converter;
@@ -2686,6 +2703,70 @@ namespace PetaPoco
             public Dictionary<string, PocoColumn> Columns { get; protected set; }
 			Dictionary<string, Delegate> PocoFactories = new Dictionary<string, Delegate>();
 		}
+
+        class EnumMapper : IDisposable
+        {
+            readonly Dictionary<Type, Dictionary<string, object>> _stringsToEnums = new Dictionary<Type, Dictionary<string, object>>();
+            readonly Dictionary<Type, Dictionary<int, string>> _enumNumbersToStrings = new Dictionary<Type, Dictionary<int, string>>();
+            readonly ReaderWriterLockSlim _lock = new ReaderWriterLockSlim();
+
+            public object EnumFromString(Type type, string value)
+            {
+                PopulateIfNotPresent(type);
+                return _stringsToEnums[type][value];
+            }
+
+            public string StringFromEnum(object theEnum)
+            {
+                Type typeOfEnum = theEnum.GetType();
+                PopulateIfNotPresent(typeOfEnum);
+                return _enumNumbersToStrings[typeOfEnum][(int)theEnum];
+            }
+
+            void PopulateIfNotPresent(Type type)
+            {
+                _lock.EnterUpgradeableReadLock();
+                try
+                {
+                    if (!_stringsToEnums.ContainsKey(type))
+                    {
+                        _lock.EnterWriteLock();
+                        try
+                        {
+                            Populate(type);
+                        }
+                        finally
+                        {
+                            _lock.ExitWriteLock();
+                        }
+                    }
+                }
+                finally
+                {
+                    _lock.ExitUpgradeableReadLock();
+                }
+            }
+
+            void Populate(Type type)
+            {
+                Array values = Enum.GetValues(type);
+                _stringsToEnums[type] = new Dictionary<string, object>(values.Length);
+                _enumNumbersToStrings[type] = new Dictionary<int, string>(values.Length);
+
+                for (int i = 0; i < values.Length; i++)
+                {
+                    object value = values.GetValue(i);
+                    _stringsToEnums[type].Add(value.ToString(), value);
+                    _enumNumbersToStrings[type].Add((int)value, value.ToString());
+                }
+            }
+
+            public void Dispose()
+            {
+                _lock.Dispose();
+            }
+        }
+		
 
 		// Member variables
 		string _connectionString;
