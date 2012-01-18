@@ -1,4 +1,4 @@
-/* PetaPoco v4.0.3.7 - A Tiny ORMish thing for your POCO's.
+/* PetaPoco v4.0.3.8 - A Tiny ORMish thing for your POCO's.
  * Copyright © 2011 Topten Software.  All Rights Reserved.
  * 
  * Apache License 2.0 - http://www.toptensoftware.com/petapoco/license
@@ -253,6 +253,7 @@ namespace PetaPoco
     {
         void Dispose();
         IDbConnection Connection { get; }
+        IDbTransaction Transaction { get; }
         IDataParameter CreateParameter();
         Transaction GetTransaction();
         Transaction GetTransaction(IsolationLevel? isolationLevel);
@@ -440,6 +441,11 @@ namespace PetaPoco
 		{
 			get { return _sharedConnection; }
 		}
+
+        public IDbTransaction Transaction
+        {
+            get { return _transaction; }
+        }
 
         public IDataParameter CreateParameter()
         {
