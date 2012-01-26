@@ -15,6 +15,12 @@ namespace PetaPoco
             return db.Fetch<T, T1, T>((a, b) => relator.OneToMany(a, b, key), Sql);
         }
 
+        public static List<T> FetchOneToMany<T, T1>(this IDatabase db, Func<T, object> key, Func<T1, object> key2, Sql Sql)
+        {
+            var relator = new Relator();
+            return db.Fetch<T, T1, T>((a, b) => relator.OneToMany(a, b, key, key2), Sql);
+        }
+
         public static List<T> FetchManyToOne<T, T1>(this IDatabase db, Func<T, object> key, Sql Sql)
         {
             var relator = new Relator();
@@ -36,6 +42,11 @@ namespace PetaPoco
         public static List<T> FetchOneToMany<T, T1>(this IDatabase db, Func<T, object> key, string sql, params object[] args)
         {
             return db.FetchOneToMany<T, T1>(key, new Sql(sql, args));
+        }
+        
+        public static List<T> FetchOneToMany<T, T1>(this IDatabase db, Func<T, object> key, Expression<Func<T1, object>> key2, string sql, params object[] args)
+        {
+            return db.FetchOneToMany<T, T1>(key, key2.Compile(), new Sql(sql, args));
         }
 
         public static List<T> FetchManyToOne<T, T1>(this IDatabase db, Func<T, object> key, string sql, params object[] args)
@@ -127,8 +138,23 @@ namespace PetaPoco
             return sub;
         }
 
-        private object onetomanycurrent;
         public T OneToMany<T, TSub>(T main, TSub sub, Func<T, object> idFunc)
+        {
+            return OneToMany(main, sub, idFunc, null);
+        }
+
+        public static object GetDefault(Type type)
+        {
+            if (type.IsValueType)
+            {
+                return Activator.CreateInstance(type);
+            }
+
+            return null;
+        }
+
+        private object onetomanycurrent;
+        public T OneToMany<T, TSub>(T main, TSub sub, Func<T, object> idFunc, Func<TSub, object> subIdFunc)
         {
             if (main == null)
                 return (T)onetomanycurrent;
@@ -149,7 +175,8 @@ namespace PetaPoco
             var prev = (T)onetomanycurrent;
             onetomanycurrent = main;
 
-            property1.SetValue((T)onetomanycurrent, new List<TSub> { sub }, null);
+            bool nullMany = subIdFunc != null && subIdFunc(sub).Equals(GetDefault(subIdFunc(sub).GetType()));
+            property1.SetValue((T) onetomanycurrent, nullMany ? new List<TSub>() : new List<TSub> {sub}, null);
 
             return prev;
         }
