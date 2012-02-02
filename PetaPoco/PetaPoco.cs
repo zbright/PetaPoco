@@ -778,7 +778,7 @@ namespace PetaPoco
                         Type u = Nullable.GetUnderlyingType(t);
                         if (u != null)
                         {
-                            if (val == null) 
+                            if (val == null || val == DBNull.Value) 
                                 return default(T);
                             return (T)Convert.ChangeType(val, u);
                         }
