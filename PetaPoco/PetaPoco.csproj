@@ -67,6 +67,7 @@
     <Compile Include="Models\Generated\Database.cs" />
     <Compile Include="PetaPoco.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Snapshotter.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
