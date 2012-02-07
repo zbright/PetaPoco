@@ -266,10 +266,10 @@ namespace PetaPoco
         object Insert(object poco);
         int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue);
         int Update(string tableName, string primaryKeyName, object poco);
-        int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue, IEnumerable<string> columns);
-        int Update(string tableName, string primaryKeyName, object poco, IEnumerable<string> columns);
-        int Update(object poco, IEnumerable<string> columns);
-        int Update(object poco, object primaryKeyValue, IEnumerable<string> columns);
+        int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue, ICollection<string> columns);
+        int Update(string tableName, string primaryKeyName, object poco, ICollection<string> columns);
+        int Update(object poco, ICollection<string> columns);
+        int Update(object poco, object primaryKeyValue, ICollection<string> columns);
         int Update(object poco);
         int Update(object poco, object primaryKeyValue);
         int Update<T>(string sql, params object[] args);
@@ -1816,10 +1816,12 @@ namespace PetaPoco
 			return Update(tableName, primaryKeyName, poco, primaryKeyValue, null);
 		}
 
-
 		// Update a record with values from a poco.  primary key value can be either supplied or read from the poco
-		public int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue, IEnumerable<string> columns)
+		public int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue, ICollection<string> columns)
 		{
+            if (columns != null && columns.Count == 0)
+                return 0;
+
 			try
 			{
 				OpenSharedConnection();
@@ -1951,12 +1953,12 @@ namespace PetaPoco
 			return Update(tableName, primaryKeyName, poco, null);
 		}
 
-		public int Update(string tableName, string primaryKeyName, object poco, IEnumerable<string> columns)
+        public int Update(string tableName, string primaryKeyName, object poco, ICollection<string> columns)
 		{
 			return Update(tableName, primaryKeyName, poco, null, columns);
 		}
 
-		public int Update(object poco, IEnumerable<string> columns)
+        public int Update(object poco, ICollection<string> columns)
 		{
 			return Update(poco, null, columns);
 		}
@@ -1970,7 +1972,8 @@ namespace PetaPoco
 		{
 			return Update(poco, primaryKeyValue, null);
 		}
-		public int Update(object poco, object primaryKeyValue, IEnumerable<string> columns)
+
+		public int Update(object poco, object primaryKeyValue, ICollection<string> columns)
 		{
 			var pd = PocoData.ForType(poco.GetType());
 			return Update(pd.TableInfo.TableName, pd.TableInfo.PrimaryKey, poco, primaryKeyValue, columns);
