@@ -203,24 +203,24 @@ namespace PetaPoco
         IEnumerable<T1> Query<T1, T2, T3, T4>(Sql sql);
         IEnumerable<T> Query<T>(string sql, params object[] args);
         IEnumerable<T> Query<T>(Sql sql);
-        T Single<T>(object primaryKey);
-        T SingleOrDefault<T>(object primaryKey);
+        T SingleById<T>(object primaryKey);
+        T SingleOrDefaultById<T>(object primaryKey);
         T Single<T>(string sql, params object[] args);
-        T Single<T>(T instance, string sql, params object[] args);
+        T SingleInto<T>(T instance, string sql, params object[] args);
         T SingleOrDefault<T>(string sql, params object[] args);
-        T SingleOrDefault<T>(T instance, string sql, params object[] args);
+        T SingleOrDefaultInto<T>(T instance, string sql, params object[] args);
         T First<T>(string sql, params object[] args);
-        T First<T>(T instance, string sql, params object[] args);
+        T FirstInto<T>(T instance, string sql, params object[] args);
         T FirstOrDefault<T>(string sql, params object[] args);
-        T FirstOrDefault<T>(T instance, string sql, params object[] args);
+        T FirstOrDefaultInto<T>(T instance, string sql, params object[] args);
         T Single<T>(Sql sql);
-        T Single<T>(T instance, Sql sql);
+        T SingleInto<T>(T instance, Sql sql);
         T SingleOrDefault<T>(Sql sql);
-        T SingleOrDefault<T>(T instance, Sql sql);
+        T SingleOrDefaultInto<T>(T instance, Sql sql);
         T First<T>(Sql sql);
-        T First<T>(T instance, Sql sql);
+        T FirstInto<T>(T instance, Sql sql);
         T FirstOrDefault<T>(Sql sql);
-        T FirstOrDefault<T>(T instance, Sql sql);
+        T FirstOrDefaultInto<T>(T instance, Sql sql);
         Dictionary<TKey, TValue> Dictionary<TKey, TValue>(Sql Sql);
         Dictionary<TKey, TValue> Dictionary<TKey, TValue>(string sql, params object[] args);
         bool Exists<T>(object primaryKey);
@@ -1523,13 +1523,13 @@ namespace PetaPoco
             var primaryKeyValuePairs = GetPrimaryKeyValues(PocoData.ForType(typeof(T)).TableInfo.PrimaryKey, primaryKey);
             return FirstOrDefault<T>(string.Format("WHERE {0}", BuildPrimaryKeySql(primaryKeyValuePairs, ref index)), primaryKeyValuePairs.Select(x => x.Value).ToArray()) != null;
 		}
-		public T Single<T>(object primaryKey) 
+		public T SingleById<T>(object primaryKey) 
 		{
             var index = 0;
             var primaryKeyValuePairs = GetPrimaryKeyValues(PocoData.ForType(typeof(T)).TableInfo.PrimaryKey, primaryKey);
             return Single<T>(string.Format("WHERE {0}", BuildPrimaryKeySql(primaryKeyValuePairs, ref index)), primaryKeyValuePairs.Select(x => x.Value).ToArray());
 		}
-		public T SingleOrDefault<T>(object primaryKey) 
+		public T SingleOrDefaultById<T>(object primaryKey) 
 		{
 		    var index = 0;
             var primaryKeyValuePairs = GetPrimaryKeyValues(PocoData.ForType(typeof(T)).TableInfo.PrimaryKey, primaryKey);
@@ -1539,7 +1539,7 @@ namespace PetaPoco
 		{
 			return Query<T>(sql, args).Single();
 		}
-        public T Single<T>(T instance, string sql, params object[] args)
+        public T SingleInto<T>(T instance, string sql, params object[] args)
         {
             return Query<T>(instance, new Sql(sql, args)).Single();
         }
@@ -1547,7 +1547,7 @@ namespace PetaPoco
 		{
 			return Query<T>(sql, args).SingleOrDefault();
 		}
-        public T SingleOrDefault<T>(T instance, string sql, params object[] args)
+        public T SingleOrDefaultInto<T>(T instance, string sql, params object[] args)
         {
             return Query<T>(instance, new Sql(sql, args)).SingleOrDefault();
         }
@@ -1555,7 +1555,7 @@ namespace PetaPoco
 		{
 			return Query<T>(sql, args).First();
 		}
-        public T First<T>(T instance, string sql, params object[] args)
+        public T FirstInto<T>(T instance, string sql, params object[] args)
         {
             return Query<T>(instance, new Sql(sql, args)).First();
         }
@@ -1563,7 +1563,7 @@ namespace PetaPoco
 		{
 			return Query<T>(sql, args).FirstOrDefault();
 		}
-        public T FirstOrDefault<T>(T instance, string sql, params object[] args)
+        public T FirstOrDefaultInto<T>(T instance, string sql, params object[] args)
         {
             return Query<T>(instance, new Sql(sql, args)).FirstOrDefault();
         }
@@ -1571,7 +1571,7 @@ namespace PetaPoco
 		{
             return Query<T>(sql).Single();
 		}
-        public T Single<T>(T instance, Sql sql)
+        public T SingleInto<T>(T instance, Sql sql)
         {
             return Query<T>(instance, sql).Single();
         }
@@ -1579,7 +1579,7 @@ namespace PetaPoco
 		{
 			return Query<T>(sql).SingleOrDefault();
 		}
-        public T SingleOrDefault<T>(T instance, Sql sql)
+        public T SingleOrDefaultInto<T>(T instance, Sql sql)
         {
             return Query<T>(instance, sql).SingleOrDefault();
         }
@@ -1587,7 +1587,7 @@ namespace PetaPoco
 		{
 			return Query<T>(sql).First();
 		}
-        public T First<T>(T instance, Sql sql)
+        public T FirstInto<T>(T instance, Sql sql)
         {
             return Query<T>(instance, sql).First();
         }
@@ -1595,7 +1595,7 @@ namespace PetaPoco
 		{
 			return Query<T>(sql).FirstOrDefault();
 		}
-        public T FirstOrDefault<T>(T instance, Sql sql)
+        public T FirstOrDefaultInto<T>(T instance, Sql sql)
         {
             return Query<T>(instance, sql).FirstOrDefault();
         }
