@@ -266,10 +266,10 @@ namespace PetaPoco
         object Insert(object poco);
         int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue);
         int Update(string tableName, string primaryKeyName, object poco);
-        int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue, ICollection<string> columns);
-        int Update(string tableName, string primaryKeyName, object poco, ICollection<string> columns);
-        int Update(object poco, ICollection<string> columns);
-        int Update(object poco, object primaryKeyValue, ICollection<string> columns);
+        int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue, IEnumerable<string> columns);
+        int Update(string tableName, string primaryKeyName, object poco, IEnumerable<string> columns);
+        int Update(object poco, IEnumerable<string> columns);
+        int Update(object poco, object primaryKeyValue, IEnumerable<string> columns);
         int Update(object poco);
         int Update(object poco, object primaryKeyValue);
         int Update<T>(string sql, params object[] args);
@@ -529,7 +529,7 @@ namespace PetaPoco
 			return rxParams.Replace(_sql, m =>
 			{
 				string param = m.Value.Substring(1);
-
+				
 				object arg_val;
 
 				int paramIndex;
@@ -1817,9 +1817,9 @@ namespace PetaPoco
 		}
 
 		// Update a record with values from a poco.  primary key value can be either supplied or read from the poco
-		public int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue, ICollection<string> columns)
+        public int Update(string tableName, string primaryKeyName, object poco, object primaryKeyValue, IEnumerable<string> columns)
 		{
-            if (columns != null && columns.Count == 0)
+            if (columns != null && !columns.Any())
                 return 0;
 
 			try
@@ -1870,9 +1870,11 @@ namespace PetaPoco
                             // Store the parameter in the command
                             AddParam(cmd, value, _paramPrefix);
                         }
-                        
 
-					    cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2}",
+                        if (columns != null && !columns.Any() && sb.Length == 0)
+                            throw new ArgumentException("There were no columns in the columns list that matched your table", "columns");
+					    
+                        cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2}",
                                             EscapeTableName(tableName), sb.ToString(), BuildPrimaryKeySql(primaryKeyValuePairs, ref index));
 
 					    foreach (var keyValue in primaryKeyValuePairs)
@@ -1953,12 +1955,12 @@ namespace PetaPoco
 			return Update(tableName, primaryKeyName, poco, null);
 		}
 
-        public int Update(string tableName, string primaryKeyName, object poco, ICollection<string> columns)
+        public int Update(string tableName, string primaryKeyName, object poco, IEnumerable<string> columns)
 		{
 			return Update(tableName, primaryKeyName, poco, null, columns);
 		}
 
-        public int Update(object poco, ICollection<string> columns)
+        public int Update(object poco, IEnumerable<string> columns)
 		{
 			return Update(poco, null, columns);
 		}
@@ -1973,7 +1975,7 @@ namespace PetaPoco
 			return Update(poco, primaryKeyValue, null);
 		}
 
-		public int Update(object poco, object primaryKeyValue, ICollection<string> columns)
+        public int Update(object poco, object primaryKeyValue, IEnumerable<string> columns)
 		{
 			var pd = PocoData.ForType(poco.GetType());
 			return Update(pd.TableInfo.TableName, pd.TableInfo.PrimaryKey, poco, primaryKeyValue, columns);
