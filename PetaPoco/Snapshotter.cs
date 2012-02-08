@@ -39,7 +39,7 @@ namespace PetaPoco
             public object NewValue { get; set; }
         }
 
-        public IEnumerable<Change> Changes()
+        public List<Change> Changes()
         {
             var changes = Diff(memberWiseClone, trackedObject);
             foreach (var c in changes)
@@ -51,9 +51,9 @@ namespace PetaPoco
             return changes;
         }
 
-        public IEnumerable<string> UpdatedColumns()
+        public List<string> UpdatedColumns()
         {
-            return Changes().Select(x => x.ColumnName);
+            return Changes().Select(x => x.ColumnName).ToList();
         }
 
         private static T Clone(T myObject)
@@ -62,7 +62,7 @@ namespace PetaPoco
             return cloner(myObject);
         }
 
-        private static IEnumerable<Change> Diff(T original, T current)
+        private static List<Change> Diff(T original, T current)
         {
             differ = differ ?? GenerateDiffer();
             return differ(original, current);
