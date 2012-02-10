@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -65,7 +66,7 @@ namespace PetaPoco
                         pc.VersionColumn = true;
 
                     // Support for composite keys needed
-                    if (pi.Name == TableInfo.PrimaryKey)
+                    if (pc.ColumnName != null && pi.Name == TableInfo.PrimaryKey)
                         TableInfo.PrimaryKey = pc.ColumnName;
 
                 }
@@ -103,11 +104,168 @@ namespace PetaPoco.FluentMappings
             SetFactory(mappings);
         }
 
+        public static void Scan(Action<IPetaPocoConventionScanner> scanner)
+        {
+            var scannerSettings = new PetaPocoConventionScannerSettings
+            {
+                PrimaryKeyAutoIncremented = x => true,
+                PrimaryKeysNamed = x => "ID",
+                TablesNamed = x => x.Name,
+                ColumnsNamed = x => x.Name,
+                NameSpace = x => true,
+                IgnorePropertiesWhere = x => false,
+                ResultPropertiesWhere = x => false,
+                VersionPropertiesWhere = x => false
+            };
+
+            scanner(new PetaPocoConventionScanner(scannerSettings));
+
+            if (scannerSettings.TheCallingAssembly)
+                scannerSettings.Assemblies.Add(Assembly.GetCallingAssembly());
+
+            var types = scannerSettings.Assemblies
+                .SelectMany(y=>y.GetExportedTypes().Where(x => scannerSettings.NameSpace(x.Namespace)));
+
+            var config = new Dictionary<Type, PetaPocoTypeDefinition>();
+
+            foreach (var type in types)
+            {
+                var petaPocoDefn = new PetaPocoTypeDefinition(type)
+                {
+                    AutoIncrement = scannerSettings.PrimaryKeyAutoIncremented(type),
+                    PrimaryKey = scannerSettings.PrimaryKeysNamed(type),
+                    TableName = scannerSettings.TablesNamed(type)
+                };
+
+                foreach (var prop in type.GetProperties())
+                {
+                    var column = new PetaPocoColumnDefinition();
+                    column.PropertyInfo = prop;
+                    column.DbColumnName = scannerSettings.ColumnsNamed(prop);
+                    column.IgnoreColumn = scannerSettings.IgnorePropertiesWhere(prop);
+                    column.ResultColumn = scannerSettings.ResultPropertiesWhere(prop);
+                    column.VersionColumn = scannerSettings.VersionPropertiesWhere(prop);
+                    petaPocoDefn.ColumnConfiguration.Add(prop.Name, column);
+                }
+
+                config.Add(type, petaPocoDefn);
+            }
+            
+            SetFactory(new PetaPocoMappings { Config = config });
+        }
+
         private static void SetFactory(PetaPocoMappings mappings)
         {
             Database.PocoDataFactory = t => (mappings != null && mappings.Config.ContainsKey(t))
                     ? new FluentMappingsPocoData(t, mappings.Config[t])
                     : new Database.PocoData(t);
+        }
+
+        // Helper method if code is in seperate assembly
+        private static Assembly FindTheCallingAssembly()
+        {
+            var trace = new StackTrace(false);
+
+            Assembly thisAssembly = Assembly.GetExecutingAssembly();
+            Assembly callingAssembly = null;
+            for (int i = 0; i < trace.FrameCount; i++)
+            {
+                StackFrame frame = trace.GetFrame(i);
+                Assembly assembly = frame.GetMethod().DeclaringType.Assembly;
+                if (assembly != thisAssembly)
+                {
+                    callingAssembly = assembly;
+                    break;
+                }
+            }
+            return callingAssembly;
+        }
+    }
+
+    public class PetaPocoConventionScannerSettings
+    {
+        public PetaPocoConventionScannerSettings()
+        {
+            Assemblies = new HashSet<Assembly>();
+        }
+
+        public HashSet<Assembly> Assemblies { get; set; }
+        public Func<Type, string> TablesNamed { get; set; }
+        public Func<Type, string> PrimaryKeysNamed { get; set; }
+        public Func<string, bool> NameSpace { get; set; }
+        public Func<Type, bool> PrimaryKeyAutoIncremented { get; set; }
+        public Func<PropertyInfo, string> ColumnsNamed { get; set; }
+        public Func<PropertyInfo, bool> IgnorePropertiesWhere { get; set; }
+        public bool TheCallingAssembly { get; set; }
+        public Func<PropertyInfo, bool> VersionPropertiesWhere { get; set; }
+        public Func<PropertyInfo, bool> ResultPropertiesWhere { get; set; }
+    }
+
+    public interface IPetaPocoConventionScanner
+    {
+        void Assembly(Assembly assembly);
+        void NameSpace(Func<string, bool> nameSpaceFunc);
+        void TablesNamed(Func<Type, string> tableFunc);
+        void PrimaryKeysNamed(Func<Type, string> primaryKeyFunc);
+        void PrimaryAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc);
+        void IgnorePropertiesWhere(Func<PropertyInfo, bool> ignoreColumnsWhereFunc);
+        void ResultPropertiesWhere(Func<PropertyInfo, bool> resultColumnsWhereFunc);
+        void VersionPropertiesWhere(Func<PropertyInfo, bool> versionColumnsWhereFunc);
+        void TheCallingAssembly(); 
+    }
+
+    public class PetaPocoConventionScanner : IPetaPocoConventionScanner
+    {
+        private readonly PetaPocoConventionScannerSettings _scannerSettings;
+
+        public PetaPocoConventionScanner(PetaPocoConventionScannerSettings scannerSettings)
+        {
+            _scannerSettings = scannerSettings;
+        }
+
+        public void Assembly(Assembly assembly)
+        {
+            _scannerSettings.Assemblies.Add(assembly);
+        }
+
+        public void IgnorePropertiesWhere(Func<PropertyInfo, bool> ignoreColumnsWhereFunc)
+        {
+            _scannerSettings.IgnorePropertiesWhere = ignoreColumnsWhereFunc;
+        }
+
+        public void ResultPropertiesWhere(Func<PropertyInfo, bool> resultColumnsWhereFunc)
+        {
+            _scannerSettings.ResultPropertiesWhere = resultColumnsWhereFunc;
+        }
+
+        public void VersionPropertiesWhere(Func<PropertyInfo, bool> versionColumnsWhereFunc)
+        {
+            _scannerSettings.VersionPropertiesWhere = versionColumnsWhereFunc;
+        }
+
+        public void TheCallingAssembly()
+        {
+            _scannerSettings.TheCallingAssembly = true;
+        }
+
+        public void NameSpace(Func<string, bool> nameSpaceFunc)
+        {
+            _scannerSettings.NameSpace = nameSpaceFunc;
+        }
+
+        public void TablesNamed(Func<Type, string> tableFunc)
+        {
+            _scannerSettings.TablesNamed = tableFunc;
+        }
+
+        public void PrimaryKeysNamed(Func<Type, string> primaryKeyFunc)
+        {
+            _scannerSettings.PrimaryKeysNamed = primaryKeyFunc;
+        }
+
+        public void PrimaryAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc)
+        {
+            _scannerSettings.PrimaryKeyAutoIncremented = primaryKeyAutoIncrementFunc;
         }
     }
 
@@ -117,7 +275,7 @@ namespace PetaPoco.FluentMappings
 
         public PetaPocoMap<T> For<T>()
         {
-            var definition = new PetaPocoTypeDefinition();
+            var definition = new PetaPocoTypeDefinition(typeof(T));
             var petaPocoMap = new PetaPocoMap<T>(definition);
             Config.Add(typeof(T), definition);
             return petaPocoMap;
@@ -135,11 +293,11 @@ namespace PetaPoco.FluentMappings
         }
     }
     
-    public class PetaPocoColumnConfiguration<T>
+    public class PetaPocoColumnConfigurationBuilder<T>
     {
         private readonly Dictionary<string, PetaPocoColumnDefinition> _columnDefinitions;
 
-        public PetaPocoColumnConfiguration(Dictionary<string, PetaPocoColumnDefinition> columnDefinitions)
+        public PetaPocoColumnConfigurationBuilder(Dictionary<string, PetaPocoColumnDefinition> columnDefinitions)
         {
             _columnDefinitions = columnDefinitions;
         }
@@ -202,16 +360,14 @@ namespace PetaPoco.FluentMappings
     {
         private readonly PetaPocoTypeDefinition _petaPocoTypeDefinition;
 
-        public PetaPocoMap() : this(new PetaPocoTypeDefinition())
+        public PetaPocoMap() : this(new PetaPocoTypeDefinition(typeof(T)))
         {
         }
 
         public PetaPocoMap(PetaPocoTypeDefinition petaPocoTypeDefinition)
         {
             _petaPocoTypeDefinition = petaPocoTypeDefinition;
-            _petaPocoTypeDefinition.Type = typeof (T);
             _petaPocoTypeDefinition.AutoIncrement = true;
-            _petaPocoTypeDefinition.ColumnConfiguration = new Dictionary<string, PetaPocoColumnDefinition>();
         }
 
         public PetaPocoMap<T> TableName(string tableName)
@@ -220,15 +376,15 @@ namespace PetaPoco.FluentMappings
             return this;
         }
 
-        public PetaPocoMap<T> Columns(Action<PetaPocoColumnConfiguration<T>> columnConfiguration)
+        public PetaPocoMap<T> Columns(Action<PetaPocoColumnConfigurationBuilder<T>> columnConfiguration)
         {
             return Columns(columnConfiguration, false);
         }
 
-        public PetaPocoMap<T> Columns(Action<PetaPocoColumnConfiguration<T>> columnConfiguration, bool explicitColumns)
+        public PetaPocoMap<T> Columns(Action<PetaPocoColumnConfigurationBuilder<T>> columnConfiguration, bool explicitColumns)
         {
             _petaPocoTypeDefinition.ExplicitColumns = explicitColumns;
-            columnConfiguration(new PetaPocoColumnConfiguration<T>(_petaPocoTypeDefinition.ColumnConfiguration));
+            columnConfiguration(new PetaPocoColumnConfigurationBuilder<T>(_petaPocoTypeDefinition.ColumnConfiguration));
             return this;
         }
 
@@ -311,6 +467,12 @@ namespace PetaPoco.FluentMappings
 
     public class PetaPocoTypeDefinition
     {
+        public PetaPocoTypeDefinition(Type type)
+        {
+            Type = type;
+            ColumnConfiguration = new Dictionary<string, PetaPocoColumnDefinition>();
+        }
+
         public Type Type { get; set; }
         public string TableName { get; set; }
         public string PrimaryKey { get; set; }
