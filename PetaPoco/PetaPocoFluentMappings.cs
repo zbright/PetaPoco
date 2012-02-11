@@ -93,7 +93,7 @@ namespace PetaPoco
 
 namespace PetaPoco.FluentMappings
 {
-    public class Configuration
+    public class FluentMappingConfiguration
     {
         public static void Configure(params IPetaPocoMap[] petaPocoMaps)
         {
