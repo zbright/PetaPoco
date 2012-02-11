@@ -25,7 +25,7 @@ namespace PetaPoco
             a = typeConfig.SequenceName ?? "";
             TableInfo.SequenceName = a.Length == 0 ? null : a;
 
-            TableInfo.AutoIncrement = typeConfig.AutoIncrement;
+            TableInfo.AutoIncrement = typeConfig.AutoIncrement ?? true;
 
             // Set autoincrement false if primary key has multiple columns
             TableInfo.AutoIncrement = TableInfo.AutoIncrement ? !TableInfo.PrimaryKey.Contains(',') : TableInfo.AutoIncrement;
@@ -35,7 +35,7 @@ namespace PetaPoco
                 Database.Mapper.GetTableInfo(t, TableInfo);
 
             // Work out bound properties
-            bool explicitColumns = typeConfig.ExplicitColumns;
+            bool explicitColumns = typeConfig.ExplicitColumns ?? false;
             Columns = new Dictionary<string, Database.PocoColumn>(StringComparer.OrdinalIgnoreCase);
             foreach (var pi in t.GetProperties())
             {
@@ -48,7 +48,7 @@ namespace PetaPoco
                 }
                 else
                 {
-                    if (isColumnDefined && typeConfig.ColumnConfiguration[pi.Name].IgnoreColumn)
+                    if (isColumnDefined && (typeConfig.ColumnConfiguration[pi.Name].IgnoreColumn.HasValue && typeConfig.ColumnConfiguration[pi.Name].IgnoreColumn.Value))
                         continue;
                 }
 
@@ -60,9 +60,9 @@ namespace PetaPoco
                 {
                     var colattr = typeConfig.ColumnConfiguration[pi.Name];
                     pc.ColumnName = colattr.DbColumnName;
-                    if (colattr.ResultColumn)
+                    if (colattr.ResultColumn.HasValue && colattr.ResultColumn.Value)
                         pc.ResultColumn = true;
-                    else if (colattr.VersionColumn)
+                    else if (colattr.VersionColumn.HasValue && colattr.VersionColumn.Value)
                         pc.VersionColumn = true;
 
                     // Support for composite keys needed
@@ -108,12 +108,12 @@ namespace PetaPoco.FluentMappings
         {
             var scannerSettings = new PetaPocoConventionScannerSettings
             {
-                PrimaryKeyAutoIncremented = x => true,
+                PrimaryKeysAutoIncremented = x => true,
                 PrimaryKeysNamed = x => "ID",
                 TablesNamed = x => x.Name,
-                ColumnsNamed = x => x.Name,
-                NameSpace = x => true,
-                IgnorePropertiesWhere = x => false,
+                PropertiesNamed = x => x.Name,
+                IncludeNameSpaces = x => true,
+                ExcludeTypes = x => false,
                 ResultPropertiesWhere = x => false,
                 VersionPropertiesWhere = x => false
             };
@@ -124,7 +124,9 @@ namespace PetaPoco.FluentMappings
                 scannerSettings.Assemblies.Add(Assembly.GetCallingAssembly());
 
             var types = scannerSettings.Assemblies
-                .SelectMany(y=>y.GetExportedTypes().Where(x => scannerSettings.NameSpace(x.Namespace)));
+                .SelectMany(y => y.GetExportedTypes().Where(x => scannerSettings.IncludeNameSpaces(x.Namespace)))
+                .Where(x => !x.IsNested && !typeof (PetaPocoMap<>).IsAssignableFrom(x) && !typeof (PetaPocoMappings).IsAssignableFrom(x))
+                .Where(x => !scannerSettings.ExcludeTypes(x));
 
             var config = new Dictionary<Type, PetaPocoTypeDefinition>();
 
@@ -132,7 +134,7 @@ namespace PetaPoco.FluentMappings
             {
                 var petaPocoDefn = new PetaPocoTypeDefinition(type)
                 {
-                    AutoIncrement = scannerSettings.PrimaryKeyAutoIncremented(type),
+                    AutoIncrement = scannerSettings.PrimaryKeysAutoIncremented(type),
                     PrimaryKey = scannerSettings.PrimaryKeysNamed(type),
                     TableName = scannerSettings.TablesNamed(type)
                 };
@@ -141,8 +143,8 @@ namespace PetaPoco.FluentMappings
                 {
                     var column = new PetaPocoColumnDefinition();
                     column.PropertyInfo = prop;
-                    column.DbColumnName = scannerSettings.ColumnsNamed(prop);
-                    column.IgnoreColumn = scannerSettings.IgnorePropertiesWhere(prop);
+                    column.DbColumnName = scannerSettings.PropertiesNamed(prop);
+                    column.IgnoreColumn = scannerSettings.IgnorePropertiesWhere.Any(x => x.Invoke(prop));
                     column.ResultColumn = scannerSettings.ResultPropertiesWhere(prop);
                     column.VersionColumn = scannerSettings.VersionPropertiesWhere(prop);
                     petaPocoDefn.ColumnConfiguration.Add(prop.Name, column);
@@ -150,8 +152,37 @@ namespace PetaPoco.FluentMappings
 
                 config.Add(type, petaPocoDefn);
             }
+
+            MergeOverrides(config, scannerSettings.MappingOverrides);
             
             SetFactory(new PetaPocoMappings { Config = config });
+        }
+
+        private static void MergeOverrides(Dictionary<Type, PetaPocoTypeDefinition> config, PetaPocoMappings overrideMappings)
+        {
+            if (overrideMappings == null)
+                return;
+
+            foreach (var overrideTypeDefinition in overrideMappings.Config)
+            {
+                var convTableDefinition = config[overrideTypeDefinition.Key];
+
+                convTableDefinition.PrimaryKey = overrideTypeDefinition.Value.PrimaryKey ?? convTableDefinition.PrimaryKey;
+                convTableDefinition.TableName = overrideTypeDefinition.Value.TableName ?? convTableDefinition.TableName;
+                convTableDefinition.AutoIncrement = overrideTypeDefinition.Value.AutoIncrement ?? convTableDefinition.AutoIncrement;
+                convTableDefinition.ExplicitColumns = overrideTypeDefinition.Value.ExplicitColumns ?? convTableDefinition.ExplicitColumns;
+
+                foreach (var overrideColumnDefinition in overrideMappings.Config[overrideTypeDefinition.Key].ColumnConfiguration)
+                {
+                    var convColDefinition = convTableDefinition.ColumnConfiguration[overrideColumnDefinition.Key];
+
+                    convColDefinition.DbColumnName = overrideColumnDefinition.Value.DbColumnName ?? convColDefinition.DbColumnName;
+                    convColDefinition.IgnoreColumn = overrideColumnDefinition.Value.IgnoreColumn ?? convColDefinition.IgnoreColumn;
+                    convColDefinition.ResultColumn = overrideColumnDefinition.Value.ResultColumn ?? convColDefinition.ResultColumn;
+                    convColDefinition.VersionColumn = overrideColumnDefinition.Value.VersionColumn ?? convColDefinition.VersionColumn;
+                    convColDefinition.PropertyInfo = overrideColumnDefinition.Value.PropertyInfo ?? convColDefinition.PropertyInfo;    
+                }
+            }
         }
 
         private static void SetFactory(PetaPocoMappings mappings)
@@ -187,31 +218,41 @@ namespace PetaPoco.FluentMappings
         public PetaPocoConventionScannerSettings()
         {
             Assemblies = new HashSet<Assembly>();
+            IgnorePropertiesWhere = new List<Func<PropertyInfo, bool>>();
         }
 
+        public PetaPocoMappings MappingOverrides { get; set; }
+
         public HashSet<Assembly> Assemblies { get; set; }
+        public bool TheCallingAssembly { get; set; }
+        public Func<string, bool> IncludeNameSpaces { get; set; }
+        public Func<Type, bool> ExcludeTypes { get; set; }
+
         public Func<Type, string> TablesNamed { get; set; }
         public Func<Type, string> PrimaryKeysNamed { get; set; }
-        public Func<string, bool> NameSpace { get; set; }
-        public Func<Type, bool> PrimaryKeyAutoIncremented { get; set; }
-        public Func<PropertyInfo, string> ColumnsNamed { get; set; }
-        public Func<PropertyInfo, bool> IgnorePropertiesWhere { get; set; }
-        public bool TheCallingAssembly { get; set; }
+        public Func<Type, bool> PrimaryKeysAutoIncremented { get; set; }
+
+        public Func<PropertyInfo, string> PropertiesNamed { get; set; }
+        public List<Func<PropertyInfo, bool>> IgnorePropertiesWhere { get; set; }
         public Func<PropertyInfo, bool> VersionPropertiesWhere { get; set; }
         public Func<PropertyInfo, bool> ResultPropertiesWhere { get; set; }
     }
 
     public interface IPetaPocoConventionScanner
     {
+        void OverrideWith(PetaPocoMappings mappings);
+        void OverrideWith(params IPetaPocoMap[] maps);
+
         void Assembly(Assembly assembly);
-        void NameSpace(Func<string, bool> nameSpaceFunc);
+        void TheCallingAssembly();
+        void IncludeNameSpaces(Func<string, bool> nameSpaceFunc);
+        void ExcludeTypes(Func<Type, bool> excludeTypes);
+
         void TablesNamed(Func<Type, string> tableFunc);
         void PrimaryKeysNamed(Func<Type, string> primaryKeyFunc);
-        void PrimaryAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc);
-        void IgnorePropertiesWhere(Func<PropertyInfo, bool> ignoreColumnsWhereFunc);
-        void ResultPropertiesWhere(Func<PropertyInfo, bool> resultColumnsWhereFunc);
-        void VersionPropertiesWhere(Func<PropertyInfo, bool> versionColumnsWhereFunc);
-        void TheCallingAssembly(); 
+        void PrimaryKeysAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc);
+
+        IPropertyBuilderConventions Properties { get; }
     }
 
     public class PetaPocoConventionScanner : IPetaPocoConventionScanner
@@ -223,24 +264,20 @@ namespace PetaPoco.FluentMappings
             _scannerSettings = scannerSettings;
         }
 
+        public void OverrideWith(PetaPocoMappings mappings)
+        {
+            _scannerSettings.MappingOverrides = mappings;
+        }
+
+        public void OverrideWith(params IPetaPocoMap[] maps)
+        {
+            var mappings = PetaPocoMappings.BuildMappingsFromMaps(maps);
+            _scannerSettings.MappingOverrides = mappings;
+        }
+
         public void Assembly(Assembly assembly)
         {
             _scannerSettings.Assemblies.Add(assembly);
-        }
-
-        public void IgnorePropertiesWhere(Func<PropertyInfo, bool> ignoreColumnsWhereFunc)
-        {
-            _scannerSettings.IgnorePropertiesWhere = ignoreColumnsWhereFunc;
-        }
-
-        public void ResultPropertiesWhere(Func<PropertyInfo, bool> resultColumnsWhereFunc)
-        {
-            _scannerSettings.ResultPropertiesWhere = resultColumnsWhereFunc;
-        }
-
-        public void VersionPropertiesWhere(Func<PropertyInfo, bool> versionColumnsWhereFunc)
-        {
-            _scannerSettings.VersionPropertiesWhere = versionColumnsWhereFunc;
         }
 
         public void TheCallingAssembly()
@@ -248,9 +285,14 @@ namespace PetaPoco.FluentMappings
             _scannerSettings.TheCallingAssembly = true;
         }
 
-        public void NameSpace(Func<string, bool> nameSpaceFunc)
+        public void IncludeNameSpaces(Func<string, bool> nameSpaceFunc)
         {
-            _scannerSettings.NameSpace = nameSpaceFunc;
+            _scannerSettings.IncludeNameSpaces = nameSpaceFunc;
+        }
+
+        public void ExcludeTypes(Func<Type, bool> excludeTypes)
+        {
+            _scannerSettings.ExcludeTypes = excludeTypes;
         }
 
         public void TablesNamed(Func<Type, string> tableFunc)
@@ -263,11 +305,67 @@ namespace PetaPoco.FluentMappings
             _scannerSettings.PrimaryKeysNamed = primaryKeyFunc;
         }
 
-        public void PrimaryAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc)
+        public void PrimaryKeysAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc)
         {
-            _scannerSettings.PrimaryKeyAutoIncremented = primaryKeyAutoIncrementFunc;
+            _scannerSettings.PrimaryKeysAutoIncremented = primaryKeyAutoIncrementFunc;
+        }
+
+        public IPropertyBuilderConventions Properties
+        {
+            get { return new PropertyBuilderConventions(_scannerSettings); }
         }
     }
+
+    public interface IPropertyBuilderConventions
+    {
+        IPropertyBuilderConventions Named(Func<PropertyInfo, string> propertiesNamedFunc);
+        IPropertyBuilderConventions IgnoreWhere(Func<PropertyInfo, bool> ignorePropertiesWhereFunc);
+        IPropertyBuilderConventions ResultWhere(Func<PropertyInfo, bool> resultPropertiesWhereFunc);
+        IPropertyBuilderConventions VersionWhere(Func<PropertyInfo, bool> versionPropertiesWhereFunc);
+    }
+
+    public static class PropertyBuilderExtensions
+    {
+        public static IPropertyBuilderConventions IgnoreComplex(this IPropertyBuilderConventions conventions)
+        {
+            return conventions.IgnoreWhere(y => !(y.PropertyType.IsValueType || y.PropertyType == typeof(string) || y.PropertyType == typeof(byte[])));
+        }
+    }
+
+    public class PropertyBuilderConventions : IPropertyBuilderConventions
+    {
+        private readonly PetaPocoConventionScannerSettings _scannerSettings;
+
+        public PropertyBuilderConventions(PetaPocoConventionScannerSettings scannerSettings)
+        {
+            _scannerSettings = scannerSettings;
+        }
+
+        public IPropertyBuilderConventions Named(Func<PropertyInfo, string> propertiesNamedFunc)
+        {
+            _scannerSettings.PropertiesNamed = propertiesNamedFunc;
+            return this;
+        }
+
+        public IPropertyBuilderConventions IgnoreWhere(Func<PropertyInfo, bool> ignorePropertiesWhereFunc)
+        {
+            _scannerSettings.IgnorePropertiesWhere.Add(ignorePropertiesWhereFunc);
+            return this;
+        }
+
+        public IPropertyBuilderConventions ResultWhere(Func<PropertyInfo, bool> resultPropertiesWhereFunc)
+        {
+            _scannerSettings.ResultPropertiesWhere = resultPropertiesWhereFunc;
+            return this;
+        }
+
+        public IPropertyBuilderConventions VersionWhere(Func<PropertyInfo, bool> versionPropertiesWhereFunc)
+        {
+            _scannerSettings.VersionPropertiesWhere = versionPropertiesWhereFunc;
+            return this;
+        }
+    }
+
 
     public class PetaPocoMappings
     {
@@ -309,7 +407,7 @@ namespace PetaPoco.FluentMappings
 
         public void Column(Expression<Func<T, object>> property, string dbColumnName)
         {
-            SetColumnDefinition(property, dbColumnName, false, false, false);
+            SetColumnDefinition(property, dbColumnName, null, null, null);
         }
 
         public void Result(Expression<Func<T, object>> property)
@@ -319,12 +417,12 @@ namespace PetaPoco.FluentMappings
 
         public void Result(Expression<Func<T, object>> property, string dbColumnName)
         {
-            SetColumnDefinition(property, dbColumnName, false, true, false);
+            SetColumnDefinition(property, dbColumnName, null, true, null);
         }
 
         public void Ignore(Expression<Func<T, object>> property)
         {
-            SetColumnDefinition(property, null, true, false, false);
+            SetColumnDefinition(property, null, true, null, null);
         }
 
         public void Version(Expression<Func<T, object>> property)
@@ -334,10 +432,10 @@ namespace PetaPoco.FluentMappings
 
         public void Version(Expression<Func<T, object>> property, string dbColumnName)
         {
-            SetColumnDefinition(property, dbColumnName, false, false, true);
+            SetColumnDefinition(property, dbColumnName, null, null, true);
         }
 
-        private void SetColumnDefinition(Expression<Func<T, object>> property, string dbColumnName, bool ignoreColumn, bool resultColumn, bool versionColumn) 
+        private void SetColumnDefinition(Expression<Func<T, object>> property, string dbColumnName, bool? ignoreColumn, bool? resultColumn, bool? versionColumn) 
         {
             var propertyInfo = PropertyHelper<T>.GetProperty(property);
             _columnDefinitions[propertyInfo.Name] = new PetaPocoColumnDefinition
@@ -367,7 +465,6 @@ namespace PetaPoco.FluentMappings
         public PetaPocoMap(PetaPocoTypeDefinition petaPocoTypeDefinition)
         {
             _petaPocoTypeDefinition = petaPocoTypeDefinition;
-            _petaPocoTypeDefinition.AutoIncrement = true;
         }
 
         public PetaPocoMap<T> TableName(string tableName)
@@ -378,10 +475,10 @@ namespace PetaPoco.FluentMappings
 
         public PetaPocoMap<T> Columns(Action<PetaPocoColumnConfigurationBuilder<T>> columnConfiguration)
         {
-            return Columns(columnConfiguration, false);
+            return Columns(columnConfiguration, null);
         }
 
-        public PetaPocoMap<T> Columns(Action<PetaPocoColumnConfigurationBuilder<T>> columnConfiguration, bool explicitColumns)
+        public PetaPocoMap<T> Columns(Action<PetaPocoColumnConfigurationBuilder<T>> columnConfiguration, bool? explicitColumns)
         {
             _petaPocoTypeDefinition.ExplicitColumns = explicitColumns;
             columnConfiguration(new PetaPocoColumnConfigurationBuilder<T>(_petaPocoTypeDefinition.ColumnConfiguration));
@@ -396,6 +493,7 @@ namespace PetaPoco.FluentMappings
 
         public PetaPocoMap<T> PrimaryKey(Expression<Func<T, object>> column)
         {
+            _petaPocoTypeDefinition.AutoIncrement = true;
             return PrimaryKey(column, null);
         }
 
@@ -477,8 +575,8 @@ namespace PetaPoco.FluentMappings
         public string TableName { get; set; }
         public string PrimaryKey { get; set; }
         public string SequenceName { get; set; }
-        public bool AutoIncrement { get; set; }
-        public bool ExplicitColumns { get; set; }
+        public bool? AutoIncrement { get; set; }
+        public bool? ExplicitColumns { get; set; }
         public Dictionary<string, PetaPocoColumnDefinition> ColumnConfiguration { get; set; }
     }
 
@@ -486,9 +584,9 @@ namespace PetaPoco.FluentMappings
     {
         public PropertyInfo PropertyInfo { get; set; }
         public string DbColumnName { get; set; }
-        public bool ResultColumn { get; set; }
-        public bool IgnoreColumn { get; set; }
-        public bool VersionColumn { get; set; }
+        public bool? ResultColumn { get; set; }
+        public bool? IgnoreColumn { get; set; }
+        public bool? VersionColumn { get; set; }
     }
 
 }
