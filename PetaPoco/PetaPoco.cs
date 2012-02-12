@@ -895,7 +895,7 @@ namespace PetaPoco
 					sqlSelectRemoved = "peta_inner.* FROM (SELECT " + sqlSelectRemoved + ") peta_inner";
 				}
                 sqlPage = string.Format("SELECT * FROM (SELECT ROW_NUMBER() OVER ({0}) peta_rn, {1}) peta_paged WHERE peta_rn>@{2} AND peta_rn<=@{3}",
-										sqlOrderBy==null ? "ORDER BY (SELECT NULL)" : sqlOrderBy, sqlSelectRemoved, args.Length, args.Length + 1);
+										sqlOrderBy==null ? "ORDER BY (SELECT NULL /*peta_dual*/)" : sqlOrderBy, sqlSelectRemoved, args.Length, args.Length + 1);
 				args = args.Concat(new object[] { skip, skip+take }).ToArray();
             }
             else if (_dbType == DBType.SqlServerCE)
