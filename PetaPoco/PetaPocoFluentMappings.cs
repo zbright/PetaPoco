@@ -7,7 +7,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.RegularExpressions;
 
-namespace PetaPoco
+namespace PetaPoco.FluentMappings
 {
     public class FluentMappingsPocoData : Database.PocoData
     {
@@ -89,10 +89,6 @@ namespace PetaPoco
         }
     }
 
-}
-
-namespace PetaPoco.FluentMappings
-{
     public class FluentMappingConfiguration
     {
         public static void Configure(params IPetaPocoMap[] petaPocoMaps)
@@ -242,8 +238,8 @@ namespace PetaPoco.FluentMappings
 
     public interface IPetaPocoConventionScanner
     {
-        void OverrideWith(PetaPocoMappings mappings);
-        void OverrideWith(params IPetaPocoMap[] maps);
+        void OverrideMappingsWith(PetaPocoMappings mappings);
+        void OverrideMappingsWith(params IPetaPocoMap[] maps);
 
         void Assembly(Assembly assembly);
         void TheCallingAssembly();
@@ -253,7 +249,7 @@ namespace PetaPoco.FluentMappings
         void PrimaryKeysNamed(Func<Type, string> primaryKeyFunc);
         void PrimaryKeysAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc);
 
-        IPropertyBuilderConventions Properties { get; }
+        IColumnsBuilderConventions Columns { get; }
     }
 
     public class PetaPocoConventionScanner : IPetaPocoConventionScanner
@@ -265,12 +261,12 @@ namespace PetaPoco.FluentMappings
             _scannerSettings = scannerSettings;
         }
 
-        public void OverrideWith(PetaPocoMappings mappings)
+        public void OverrideMappingsWith(PetaPocoMappings mappings)
         {
             _scannerSettings.MappingOverrides = mappings;
         }
 
-        public void OverrideWith(params IPetaPocoMap[] maps)
+        public void OverrideMappingsWith(params IPetaPocoMap[] maps)
         {
             var mappings = PetaPocoMappings.BuildMappingsFromMaps(maps);
             _scannerSettings.MappingOverrides = mappings;
@@ -306,23 +302,23 @@ namespace PetaPoco.FluentMappings
             _scannerSettings.PrimaryKeysAutoIncremented = primaryKeyAutoIncrementFunc;
         }
 
-        public IPropertyBuilderConventions Properties
+        public IColumnsBuilderConventions Columns
         {
             get { return new PropertyBuilderConventions(_scannerSettings); }
         }
     }
 
-    public interface IPropertyBuilderConventions
+    public interface IColumnsBuilderConventions
     {
-        IPropertyBuilderConventions Named(Func<PropertyInfo, string> propertiesNamedFunc);
-        IPropertyBuilderConventions IgnoreWhere(Func<PropertyInfo, bool> ignorePropertiesWhereFunc);
-        IPropertyBuilderConventions ResultWhere(Func<PropertyInfo, bool> resultPropertiesWhereFunc);
-        IPropertyBuilderConventions VersionWhere(Func<PropertyInfo, bool> versionPropertiesWhereFunc);
+        IColumnsBuilderConventions Named(Func<PropertyInfo, string> propertiesNamedFunc);
+        IColumnsBuilderConventions IgnoreWhere(Func<PropertyInfo, bool> ignorePropertiesWhereFunc);
+        IColumnsBuilderConventions ResultWhere(Func<PropertyInfo, bool> resultPropertiesWhereFunc);
+        IColumnsBuilderConventions VersionWhere(Func<PropertyInfo, bool> versionPropertiesWhereFunc);
     }
 
     public static class PetaPocoConventionExtensions
     {
-        public static IPropertyBuilderConventions IgnoreComplex(this IPropertyBuilderConventions conventions)
+        public static IColumnsBuilderConventions IgnoreComplex(this IColumnsBuilderConventions conventions)
         {
             return conventions.IgnoreWhere(y => !(y.PropertyType.IsValueType || y.PropertyType == typeof(string) || y.PropertyType == typeof(byte[])));
         }
@@ -331,11 +327,11 @@ namespace PetaPoco.FluentMappings
         {
             scanner.PrimaryKeysNamed(y => y.Name + "Id");
             scanner.TablesNamed(y => Inflector.MakePlural(y.Name));
-            scanner.Properties.IgnoreComplex();
+            scanner.Columns.IgnoreComplex();
         }
     }
 
-    public class PropertyBuilderConventions : IPropertyBuilderConventions
+    public class PropertyBuilderConventions : IColumnsBuilderConventions
     {
         private readonly PetaPocoConventionScannerSettings _scannerSettings;
 
@@ -344,25 +340,25 @@ namespace PetaPoco.FluentMappings
             _scannerSettings = scannerSettings;
         }
 
-        public IPropertyBuilderConventions Named(Func<PropertyInfo, string> propertiesNamedFunc)
+        public IColumnsBuilderConventions Named(Func<PropertyInfo, string> propertiesNamedFunc)
         {
             _scannerSettings.PropertiesNamed = propertiesNamedFunc;
             return this;
         }
 
-        public IPropertyBuilderConventions IgnoreWhere(Func<PropertyInfo, bool> ignorePropertiesWhereFunc)
+        public IColumnsBuilderConventions IgnoreWhere(Func<PropertyInfo, bool> ignorePropertiesWhereFunc)
         {
             _scannerSettings.IgnorePropertiesWhere.Add(ignorePropertiesWhereFunc);
             return this;
         }
 
-        public IPropertyBuilderConventions ResultWhere(Func<PropertyInfo, bool> resultPropertiesWhereFunc)
+        public IColumnsBuilderConventions ResultWhere(Func<PropertyInfo, bool> resultPropertiesWhereFunc)
         {
             _scannerSettings.ResultPropertiesWhere = resultPropertiesWhereFunc;
             return this;
         }
 
-        public IPropertyBuilderConventions VersionWhere(Func<PropertyInfo, bool> versionPropertiesWhereFunc)
+        public IColumnsBuilderConventions VersionWhere(Func<PropertyInfo, bool> versionPropertiesWhereFunc)
         {
             _scannerSettings.VersionPropertiesWhere = versionPropertiesWhereFunc;
             return this;
