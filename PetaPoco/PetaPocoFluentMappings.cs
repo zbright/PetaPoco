@@ -117,7 +117,7 @@ namespace PetaPoco.FluentMappings
             scanner(new PetaPocoConventionScanner(scannerSettings));
 
             if (scannerSettings.TheCallingAssembly)
-                scannerSettings.Assemblies.Add(Assembly.GetCallingAssembly());
+                scannerSettings.Assemblies.Add(FindTheCallingAssembly());
 
             var types = scannerSettings.Assemblies
                 .SelectMany(x => x.GetExportedTypes())
@@ -193,6 +193,9 @@ namespace PetaPoco.FluentMappings
         // Helper method if code is in seperate assembly
         private static Assembly FindTheCallingAssembly()
         {
+            if (!typeof(FluentMappingConfiguration).Assembly.FullName.StartsWith("PetaPoco,"))
+                return Assembly.GetCallingAssembly();
+
             var trace = new StackTrace(false);
 
             Assembly thisAssembly = Assembly.GetExecutingAssembly();
