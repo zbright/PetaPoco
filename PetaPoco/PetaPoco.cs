@@ -1699,7 +1699,7 @@ namespace PetaPoco
                         {
 
                             switch (_dbType)
-                            {
+                            {   
                                 case DBType.SqlServerCE:
                                     DoPreExecute(cmd);
                                     cmd.ExecuteNonQuery();
@@ -1708,6 +1708,12 @@ namespace PetaPoco
                                     break;
                                 case DBType.SqlServer:
                                     cmd.CommandText += ";\nSELECT SCOPE_IDENTITY() AS NewID;";
+                                    DoPreExecute(cmd);
+                                    id = cmd.ExecuteScalar();
+                                    OnExecutedCommand(cmd);
+                                    break;
+                                case DBType.MySql:
+                                    cmd.CommandText += ";\nSELECT LAST_INSERT_ID();";
                                     DoPreExecute(cmd);
                                     id = cmd.ExecuteScalar();
                                     OnExecutedCommand(cmd);
