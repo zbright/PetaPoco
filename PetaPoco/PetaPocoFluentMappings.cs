@@ -94,35 +94,30 @@ namespace PetaPoco.FluentMappings
         public static void Configure(params IPetaPocoMap[] petaPocoMaps)
         {
             var mappings = PetaPocoMappings.BuildMappingsFromMaps(petaPocoMaps);
-            SetFactory(mappings);
+            SetFactory(mappings, null);
         }
 
         public static void Configure(PetaPocoMappings mappings)
         {
-            SetFactory(mappings);
+            SetFactory(mappings, null);
         }
 
         public static PetaPocoMappings Scan(Action<IPetaPocoConventionScanner> scanner)
         {
-            var scannerSettings = new PetaPocoConventionScannerSettings
+            var scannerSettings = ProcessSettings(scanner);
+            if (scannerSettings.Lazy)
             {
-                PrimaryKeysAutoIncremented = x => true,
-                PrimaryKeysNamed = x => "ID",
-                TablesNamed = x => x.Name,
-                PropertiesNamed = x => x.Name,
-                ResultPropertiesWhere = x => false,
-                VersionPropertiesWhere = x => false
-            };
+                var lazyPetaPocoMappings = new PetaPocoMappings();
+                SetFactory(lazyPetaPocoMappings, scanner);
+                return lazyPetaPocoMappings;
+            }
+            
+            return CreateMappings(scannerSettings, null);
+        }
 
-            scanner(new PetaPocoConventionScanner(scannerSettings));
-
-            if (scannerSettings.TheCallingAssembly)
-                scannerSettings.Assemblies.Add(FindTheCallingAssembly());
-
-            var types = scannerSettings.Assemblies
-                .SelectMany(x => x.GetExportedTypes())
-                .Where(x => scannerSettings.IncludeTypes.All(y => y.Invoke(x)))
-                .Where(x => !x.IsNested && !typeof (PetaPocoMap<>).IsAssignableFrom(x) && !typeof (PetaPocoMappings).IsAssignableFrom(x));
+        private static PetaPocoMappings CreateMappings(PetaPocoConventionScannerSettings scannerSettings, Type[] typesOverride)
+        {
+            var types = typesOverride ?? FindTypes(scannerSettings);
 
             var config = new Dictionary<Type, PetaPocoTypeDefinition>();
 
@@ -132,7 +127,8 @@ namespace PetaPoco.FluentMappings
                 {
                     AutoIncrement = scannerSettings.PrimaryKeysAutoIncremented(type),
                     PrimaryKey = scannerSettings.PrimaryKeysNamed(type),
-                    TableName = scannerSettings.TablesNamed(type)
+                    TableName = scannerSettings.TablesNamed(type),
+                    SequenceName = scannerSettings.SequencesNamed(type),
                 };
 
                 foreach (var prop in type.GetProperties())
@@ -152,8 +148,38 @@ namespace PetaPoco.FluentMappings
             MergeOverrides(config, scannerSettings.MappingOverrides);
 
             var petaPocoMappings = new PetaPocoMappings {Config = config};
-            SetFactory(petaPocoMappings);
+            SetFactory(petaPocoMappings, null);
             return petaPocoMappings;
+        }
+
+        private static PetaPocoConventionScannerSettings ProcessSettings(Action<IPetaPocoConventionScanner> scanner)
+        {
+            var defaultScannerSettings = new PetaPocoConventionScannerSettings
+            {
+                PrimaryKeysAutoIncremented = x => true,
+                PrimaryKeysNamed = x => "ID",
+                TablesNamed = x => x.Name,
+                PropertiesNamed = x => x.Name,
+                ResultPropertiesWhere = x => false,
+                VersionPropertiesWhere = x => false,
+                SequencesNamed = x => null,
+                Lazy = false
+            };
+
+            scanner.Invoke(new PetaPocoConventionScanner(defaultScannerSettings));
+            return defaultScannerSettings;
+        }
+
+        private static IEnumerable<Type> FindTypes(PetaPocoConventionScannerSettings scannerSettings)
+        {
+            if (scannerSettings.TheCallingAssembly)
+                scannerSettings.Assemblies.Add(FindTheCallingAssembly());
+
+            var types = scannerSettings.Assemblies
+                .SelectMany(x => x.GetExportedTypes())
+                .Where(x => scannerSettings.IncludeTypes.All(y => y.Invoke(x)))
+                .Where(x => !x.IsNested && !typeof (PetaPocoMap<>).IsAssignableFrom(x) && !typeof (PetaPocoMappings).IsAssignableFrom(x));
+            return types;
         }
 
         private static void MergeOverrides(Dictionary<Type, PetaPocoTypeDefinition> config, PetaPocoMappings overrideMappings)
@@ -166,6 +192,7 @@ namespace PetaPoco.FluentMappings
                 var convTableDefinition = config[overrideTypeDefinition.Key];
 
                 convTableDefinition.PrimaryKey = overrideTypeDefinition.Value.PrimaryKey ?? convTableDefinition.PrimaryKey;
+                convTableDefinition.SequenceName = overrideTypeDefinition.Value.SequenceName ?? convTableDefinition.SequenceName;
                 convTableDefinition.TableName = overrideTypeDefinition.Value.TableName ?? convTableDefinition.TableName;
                 convTableDefinition.AutoIncrement = overrideTypeDefinition.Value.AutoIncrement ?? convTableDefinition.AutoIncrement;
                 convTableDefinition.ExplicitColumns = overrideTypeDefinition.Value.ExplicitColumns ?? convTableDefinition.ExplicitColumns;
@@ -183,11 +210,28 @@ namespace PetaPoco.FluentMappings
             }
         }
 
-        private static void SetFactory(PetaPocoMappings mappings)
+        private static void SetFactory(PetaPocoMappings mappings, Action<IPetaPocoConventionScanner> scanner)
         {
-            Database.PocoDataFactory = t => (mappings != null && mappings.Config.ContainsKey(t))
-                    ? new FluentMappingsPocoData(t, mappings.Config[t])
-                    : new Database.PocoData(t);
+            var maps = mappings;
+            var scana = scanner;
+            Database.PocoDataFactory = t =>
+            {
+                if (maps != null)
+                {
+                    if (maps.Config.ContainsKey(t))
+                    {
+                        return new FluentMappingsPocoData(t, mappings.Config[t]);
+                    }
+
+                    if (scana != null)
+                    {
+                        var settings = ProcessSettings(scana);
+                        var typeMapping = CreateMappings(settings, new[] { t });
+                        return new FluentMappingsPocoData(t, typeMapping.Config[t]);
+                    }
+                }
+                return new Database.PocoData(t);
+            };
         }
 
         // Helper method if code is in seperate assembly
@@ -232,11 +276,14 @@ namespace PetaPoco.FluentMappings
         public Func<Type, string> TablesNamed { get; set; }
         public Func<Type, string> PrimaryKeysNamed { get; set; }
         public Func<Type, bool> PrimaryKeysAutoIncremented { get; set; }
+        public Func<Type, string> SequencesNamed { get; set; }
 
         public Func<PropertyInfo, string> PropertiesNamed { get; set; }
         public List<Func<PropertyInfo, bool>> IgnorePropertiesWhere { get; set; }
         public Func<PropertyInfo, bool> VersionPropertiesWhere { get; set; }
         public Func<PropertyInfo, bool> ResultPropertiesWhere { get; set; }
+
+        public bool Lazy { get; set; }
     }
 
     public interface IPetaPocoConventionScanner
@@ -251,6 +298,9 @@ namespace PetaPoco.FluentMappings
         void TablesNamed(Func<Type, string> tableFunc);
         void PrimaryKeysNamed(Func<Type, string> primaryKeyFunc);
         void PrimaryKeysAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc);
+        void SequencesNamed(Func<Type, string> sequencesFunc);
+
+        void LazyLoadMappings();
 
         IColumnsBuilderConventions Columns { get; }
     }
@@ -298,6 +348,16 @@ namespace PetaPoco.FluentMappings
         public void PrimaryKeysNamed(Func<Type, string> primaryKeyFunc)
         {
             _scannerSettings.PrimaryKeysNamed = primaryKeyFunc;
+        }
+
+        public void SequencesNamed(Func<Type, string> sequencesFunc)
+        {
+            _scannerSettings.SequencesNamed = sequencesFunc;
+        }
+
+        public void LazyLoadMappings()
+        {
+            _scannerSettings.Lazy = true;
         }
 
         public void PrimaryKeysAutoIncremented(Func<Type, bool> primaryKeyAutoIncrementFunc)
