@@ -1636,55 +1636,57 @@ namespace PetaPoco
 				OpenSharedConnection();
                 try
                 {
-					using (var cmd = CreateCommand(_sharedConnection, ""))
+					var pd = PocoData.ForObject(poco, primaryKeyName);
+					var names = new List<string>();
+					var values = new List<string>();
+					var rawvalues = new List<object>();
+					var index = 0;
+					var versionName = "";
+
+					foreach (var i in pd.Columns)
 					{
-						var pd = PocoData.ForObject(poco, primaryKeyName);
-						var names = new List<string>();
-						var values = new List<string>();
-						var index = 0;
-					    var versionName = "";
+						// Don't insert result columns
+						if (i.Value.ResultColumn)
+							continue;
 
-						foreach (var i in pd.Columns)
+						// Don't insert the primary key (except under oracle where we need bring in the next sequence value)
+						if (autoIncrement && primaryKeyName != null && string.Compare(i.Key, primaryKeyName, true)==0)
 						{
-							// Don't insert result columns
-							if (i.Value.ResultColumn)
-								continue;
-
-							// Don't insert the primary key (except under oracle where we need bring in the next sequence value)
-							if (autoIncrement && primaryKeyName != null && string.Compare(i.Key, primaryKeyName, true)==0)
+							if (_dbType == DBType.Oracle && !string.IsNullOrEmpty(pd.TableInfo.SequenceName))
 							{
-								if (_dbType == DBType.Oracle && !string.IsNullOrEmpty(pd.TableInfo.SequenceName))
-								{
-									names.Add(i.Key);
-									values.Add(string.Format("{0}.nextval", pd.TableInfo.SequenceName));
-								}
-								continue;
+								names.Add(i.Key);
+								values.Add(string.Format("{0}.nextval", pd.TableInfo.SequenceName));
 							}
-
-							names.Add(EscapeSqlIdentifier(i.Key));
-							values.Add(string.Format("{0}{1}", _paramPrefix, index++));
-
-						    object val = i.Value.GetValue(poco);
-                            if (i.Value.VersionColumn)
-                            {
-                                val = 1;
-                                versionName = i.Key;
-                            }
-
-						    AddParam(cmd, val, _paramPrefix);
+							continue;
 						}
 
+						names.Add(EscapeSqlIdentifier(i.Key));
+						values.Add(string.Format("{0}{1}", _paramPrefix, index++));
+
+						object val = i.Value.GetValue(poco);
+                        if (i.Value.VersionColumn)
+                        {
+                            val = 1;
+                            versionName = i.Key;
+                        }
+
+                        rawvalues.Add(val);
+					}
+
+                    using (var cmd = CreateCommand(_sharedConnection, ""))
+                    {
+                        var sql = string.Empty;
                         if (names.Count > 0 || _dbType == DBType.MySql)
                         {
-                            cmd.CommandText = string.Format("INSERT INTO {0} ({1}) VALUES ({2})",
-                                                            EscapeTableName(tableName),
-                                                            string.Join(",", names.ToArray()),
-                                                            string.Join(",", values.ToArray()));
+                            sql = string.Format("INSERT INTO {0} ({1}) VALUES ({2})", EscapeTableName(tableName), string.Join(",", names.ToArray()), string.Join(",", values.ToArray()));
                         }
                         else
                         {
-                            cmd.CommandText = string.Format("INSERT INTO {0} DEFAULT VALUES", EscapeTableName(tableName));
+                            sql = string.Format("INSERT INTO {0} DEFAULT VALUES", EscapeTableName(tableName));
                         }
+
+                        cmd.CommandText = sql;
+                        rawvalues.ForEach(x=>AddParam(cmd, x, _paramPrefix));
 
 					    object id;
 
@@ -1721,7 +1723,7 @@ namespace PetaPoco
                                 case DBType.PostgreSQL:
                                     if (primaryKeyName != null)
                                     {
-                                        cmd.CommandText += string.Format("returning {0} as NewID", EscapeSqlIdentifier(primaryKeyName));
+                                        cmd.CommandText += string.Format(" returning {0} as NewID", EscapeSqlIdentifier(primaryKeyName));
                                         DoPreExecute(cmd);
                                         id = cmd.ExecuteScalar();
                                     }
@@ -1832,103 +1834,74 @@ namespace PetaPoco
             if (columns != null && !columns.Any())
                 return 0;
 
-			try
-			{
-				OpenSharedConnection();
-                try
+			var sb = new StringBuilder();
+			var index = 0;
+            var rawvalues = new List<object>();
+			var pd = PocoData.ForObject(poco,primaryKeyName);
+			string versionName = null;
+			object versionValue = null;
+
+            var primaryKeyValuePairs = GetPrimaryKeyValues(primaryKeyName, primaryKeyValue);
+
+            foreach (var i in pd.Columns)
+            {
+                // Don't update the primary key, but grab the value if we don't have it
+                if (primaryKeyValue == null && primaryKeyValuePairs.ContainsKey(i.Key))
                 {
-					using (var cmd = CreateCommand(_sharedConnection, ""))
-					{
-						var sb = new StringBuilder();
-						var index = 0;
-						var pd = PocoData.ForObject(poco,primaryKeyName);
-					    string versionName = null;
-					    object versionValue = null;
-
-                        var primaryKeyValuePairs = GetPrimaryKeyValues(primaryKeyName, primaryKeyValue);
-
-                        foreach (var i in pd.Columns)
-                        {
-                            // Don't update the primary key, but grab the value if we don't have it
-                            if (primaryKeyValue == null && primaryKeyValuePairs.ContainsKey(i.Key))
-                            {
-                                primaryKeyValuePairs[i.Key] = i.Value.PropertyInfo.GetValue(poco, null);
-                                continue;
-                            }
-
-                            // Dont update result only columns
-                            if (i.Value.ResultColumn)
-                                continue;
-
-                            if (!i.Value.VersionColumn && columns != null && !columns.Contains(i.Value.ColumnName, StringComparer.OrdinalIgnoreCase))
-                                continue;
-                            
-                            object value = i.Value.PropertyInfo.GetValue(poco, null);
-
-                            if (i.Value.VersionColumn)
-                            {
-                                versionName = i.Key;
-                                versionValue = value;
-                                value = Convert.ToInt64(value) + 1;
-                            }
-
-                            // Build the sql
-                            if (index > 0)
-                                sb.Append(", ");
-                            sb.AppendFormat("{0} = {1}{2}", EscapeSqlIdentifier(i.Key), _paramPrefix, index++);
-
-                            // Store the parameter in the command
-                            AddParam(cmd, value, _paramPrefix);
-                        }
-
-                        if (columns != null && columns.Any() && sb.Length == 0)
-                            throw new ArgumentException("There were no columns in the columns list that matched your table", "columns");
-					    
-                        cmd.CommandText = string.Format("UPDATE {0} SET {1} WHERE {2}",
-                                            EscapeTableName(tableName), sb.ToString(), BuildPrimaryKeySql(primaryKeyValuePairs, ref index));
-
-					    foreach (var keyValue in primaryKeyValuePairs)
-					    {
-                            AddParam(cmd, keyValue.Value, _paramPrefix);    
-					    }
-
-                        if (!string.IsNullOrEmpty(versionName))
-                        {
-                            cmd.CommandText += string.Format(" AND {0} = {1}{2}", EscapeSqlIdentifier(versionName), _paramPrefix, index++);
-                            AddParam(cmd, versionValue, _paramPrefix);
-                        }
-
-						DoPreExecute(cmd);
-
-						var result = cmd.ExecuteNonQuery();
-
-                        if (result == 0 && !string.IsNullOrEmpty(versionName) && VersionException == VersionExceptionHandling.Exception)
-                            throw new DBConcurrencyException(string.Format("A Concurrency update occured in table '{0}' for primary key value(s) = '{1}' and version = '{2}'", tableName, string.Join(",", primaryKeyValuePairs.Values.Select(x=>x.ToString()).ToArray()), versionValue));
-
-                        OnExecutedCommand(cmd);
-
-                        // Set Version
-                        if (!string.IsNullOrEmpty(versionName)) {
-                            PocoColumn pc;
-                            if (pd.Columns.TryGetValue(versionName, out pc))
-                            {
-                                pc.PropertyInfo.SetValue(poco, Convert.ChangeType(Convert.ToInt64(versionValue)+1, pc.PropertyInfo.PropertyType), null);
-                            }
-                        }
-
-                        return result;
-					}
-				}
-                finally
-                {
-                    CloseSharedConnection();
+                    primaryKeyValuePairs[i.Key] = i.Value.PropertyInfo.GetValue(poco, null);
+                    continue;
                 }
-			}
-			catch (Exception x)
-			{
-				OnException(x);
-				throw;
-			}
+
+                // Dont update result only columns
+                if (i.Value.ResultColumn)
+                    continue;
+
+                if (!i.Value.VersionColumn && columns != null && !columns.Contains(i.Value.ColumnName, StringComparer.OrdinalIgnoreCase))
+                    continue;
+                            
+                object value = i.Value.PropertyInfo.GetValue(poco, null);
+
+                if (i.Value.VersionColumn)
+                {
+                    versionName = i.Key;
+                    versionValue = value;
+                    value = Convert.ToInt64(value) + 1;
+                }
+
+                // Build the sql
+                if (index > 0)
+                    sb.Append(", ");
+                sb.AppendFormat("{0} = {1}{2}", EscapeSqlIdentifier(i.Key), _paramPrefix, index++);
+
+                rawvalues.Add(value);
+            }
+
+            if (columns != null && columns.Any() && sb.Length == 0)
+                throw new ArgumentException("There were no columns in the columns list that matched your table", "columns");
+					    
+            var sql = string.Format("UPDATE {0} SET {1} WHERE {2}", EscapeTableName(tableName), sb, BuildPrimaryKeySql(primaryKeyValuePairs, ref index));
+
+            rawvalues.AddRange(primaryKeyValuePairs.Select(keyValue => keyValue.Value));
+
+            if (!string.IsNullOrEmpty(versionName))
+            {
+                sql += string.Format(" AND {0} = @{1}", EscapeSqlIdentifier(versionName), index++);
+                rawvalues.Add(versionValue); 
+            }
+
+            var result = Execute(sql, rawvalues.ToArray());
+
+            // Set Version
+            if (!string.IsNullOrEmpty(versionName))
+            {
+                PocoColumn pc;
+                if (pd.Columns.TryGetValue(versionName, out pc))
+                {
+                    pc.PropertyInfo.SetValue(poco, Convert.ChangeType(Convert.ToInt64(versionValue) + 1, pc.PropertyInfo.PropertyType), null);
+                }
+            }
+
+            return result;
 		}
 
         private string BuildPrimaryKeySql(Dictionary<string, object> primaryKeyValuePair, ref int index)
