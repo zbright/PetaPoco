@@ -1848,7 +1848,7 @@ namespace PetaPoco
                 // Don't update the primary key, but grab the value if we don't have it
                 if (primaryKeyValue == null && primaryKeyValuePairs.ContainsKey(i.Key))
                 {
-                    primaryKeyValuePairs[i.Key] = i.Value.PropertyInfo.GetValue(poco, null);
+                    primaryKeyValuePairs[i.Key] = i.Value.GetValue(poco);
                     continue;
                 }
 
@@ -1858,8 +1858,8 @@ namespace PetaPoco
 
                 if (!i.Value.VersionColumn && columns != null && !columns.Contains(i.Value.ColumnName, StringComparer.OrdinalIgnoreCase))
                     continue;
-                            
-                object value = i.Value.PropertyInfo.GetValue(poco, null);
+
+                object value = i.Value.GetValue(poco);
 
                 if (i.Value.VersionColumn)
                 {
@@ -1897,7 +1897,7 @@ namespace PetaPoco
                 PocoColumn pc;
                 if (pd.Columns.TryGetValue(versionName, out pc))
                 {
-                    pc.PropertyInfo.SetValue(poco, Convert.ChangeType(Convert.ToInt64(versionValue) + 1, pc.PropertyInfo.PropertyType), null);
+                    pc.SetValue(poco, Convert.ChangeType(Convert.ToInt64(versionValue) + 1, pc.PropertyInfo.PropertyType));
                 }
             }
 
@@ -1992,7 +1992,7 @@ namespace PetaPoco
                 {
                     if (primaryKeyValuePairs.ContainsKey(i.Key))
                     {
-                        primaryKeyValuePairs[i.Key] = i.Value.PropertyInfo.GetValue(poco, null);
+                        primaryKeyValuePairs[i.Key] = i.Value.GetValue(poco);
                     }   
 	            }
             }
@@ -2186,11 +2186,11 @@ namespace PetaPoco
 		}
 		public class ExpandoColumn : PocoColumn
 		{
-			public override void SetValue(object target, object val) { (target as IDictionary<string, object>)[ColumnName]=val; }
+			public override void SetValue(object target, object val) { ((IDictionary<string, object>) target)[ColumnName]=val; }
 			public override object GetValue(object target) 
 			{ 
 				object val=null;
-				(target as IDictionary<string, object>).TryGetValue(ColumnName, out val);
+				((IDictionary<string, object>) target).TryGetValue(ColumnName, out val);
 				return val;
 			}
 			public override object ChangeType(object val) { return val; }
@@ -2213,7 +2213,7 @@ namespace PetaPoco
 					pd.Columns.Add(primaryKeyName, new ExpandoColumn() { ColumnName = primaryKeyName });
 					pd.TableInfo.PrimaryKey = primaryKeyName;
 					pd.TableInfo.AutoIncrement = true;
-					foreach (var col in (o as IDictionary<string, object>).Keys)
+					foreach (var col in ((IDictionary<string, object>) o).Keys)
 					{
 						if (col!=primaryKeyName)
 							pd.Columns.Add(col, new ExpandoColumn() { ColumnName = col });
