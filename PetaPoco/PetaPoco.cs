@@ -1871,7 +1871,7 @@ namespace PetaPoco
                 // Build the sql
                 if (index > 0)
                     sb.Append(", ");
-                sb.AppendFormat("{0} = {1}{2}", EscapeSqlIdentifier(i.Key), _paramPrefix, index++);
+                sb.AppendFormat("{0} = @{1}", EscapeSqlIdentifier(i.Key), index++);
 
                 rawvalues.Add(value);
             }
