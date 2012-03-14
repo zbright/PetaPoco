@@ -189,6 +189,9 @@ namespace PetaPoco.FluentMappings
 
             foreach (var overrideTypeDefinition in overrideMappings.Config)
             {
+                if (!config.ContainsKey(overrideTypeDefinition.Key))
+                    return;
+
                 var convTableDefinition = config[overrideTypeDefinition.Key];
 
                 convTableDefinition.PrimaryKey = overrideTypeDefinition.Value.PrimaryKey ?? convTableDefinition.PrimaryKey;
